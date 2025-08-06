@@ -14,6 +14,7 @@ import {
   McpError 
 } from '@modelcontextprotocol/sdk/types.js';
 import * as dotenv from 'dotenv';
+import { authGuard } from './middleware/auth';
 
 import { GHLApiClient } from './clients/ghl-api-client';
 import { ContactTools } from './tools/contact-tools';
@@ -119,7 +120,7 @@ class GHLMCPHttpServer {
     this.app.use(cors({
       origin: ['https://chatgpt.com', 'https://chat.openai.com', 'http://localhost:*'],
       methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-App-Key', 'locationId'],
       credentials: true
     }));
 
@@ -135,30 +136,42 @@ class GHLMCPHttpServer {
 
   /**
    * Initialize GoHighLevel API client with configuration
+   * NOTE: This is kept for backwards compatibility but will use dummy data since
+   * actual tokens come from request headers in multi-tenant mode
    */
   private initializeGHLClient(): GHLApiClient {
-    // Load configuration from environment
+    // Load configuration from environment with defaults for multi-tenant mode
     const config: GHLConfig = {
-      accessToken: process.env.GHL_API_KEY || '',
+      accessToken: process.env.GHL_API_KEY || 'dummy-token', // Will be overridden by request headers
       baseUrl: process.env.GHL_BASE_URL || 'https://services.leadconnectorhq.com',
       version: '2021-07-28',
-      locationId: process.env.GHL_LOCATION_ID || ''
+      locationId: process.env.GHL_LOCATION_ID || 'dummy-location' // Will be overridden by request headers
     };
 
-    // Validate required configuration
-    if (!config.accessToken) {
-      throw new Error('GHL_API_KEY environment variable is required');
-    }
-
-    if (!config.locationId) {
-      throw new Error('GHL_LOCATION_ID environment variable is required');
-    }
-
-    console.log('[GHL MCP HTTP] Initializing GHL API client...');
+    console.log('[GHL MCP HTTP] Initializing default GHL API client (will be overridden by request headers)...');
     console.log(`[GHL MCP HTTP] Base URL: ${config.baseUrl}`);
     console.log(`[GHL MCP HTTP] Version: ${config.version}`);
-    console.log(`[GHL MCP HTTP] Location ID: ${config.locationId}`);
 
+    return new GHLApiClient(config);
+  }
+
+  /**
+   * Create a dynamic GHL API client using headers from the request
+   * This enables multi-tenant support where each request provides its own auth
+   */
+  private createDynamicGHLClient(req: express.Request): GHLApiClient {
+    if (!req.ghlAuth) {
+      throw new Error('Request missing GHL authentication data');
+    }
+
+    const config: GHLConfig = {
+      accessToken: req.ghlAuth.accessToken,
+      baseUrl: process.env.GHL_BASE_URL || 'https://services.leadconnectorhq.com',
+      version: '2021-07-28',
+      locationId: req.ghlAuth.locationId
+    };
+
+    console.log(`[GHL Dynamic Client] Creating client for location: ${config.locationId}`);
     return new GHLApiClient(config);
   }
 
@@ -320,8 +333,8 @@ class GHLMCPHttpServer {
       });
     });
 
-    // Tools listing endpoint
-    this.app.get('/tools', async (req, res) => {
+    // Tools listing endpoint (OpenAI compatible)
+    this.app.get('/tools', authGuard, async (req, res) => {
       try {
         const contactTools = this.contactTools.getToolDefinitions();
         const conversationTools = this.conversationTools.getToolDefinitions();
@@ -341,12 +354,56 @@ class GHLMCPHttpServer {
         const storeTools = this.storeTools.getTools();
         const productsTools = this.productsTools.getTools();
         
-        res.json({
-          tools: [...contactTools, ...conversationTools, ...blogTools, ...opportunityTools, ...calendarTools, ...emailTools, ...locationTools, ...emailISVTools, ...socialMediaTools, ...mediaTools, ...objectTools, ...associationTools, ...customFieldV2Tools, ...workflowTools, ...surveyTools, ...storeTools, ...productsTools],
-          count: contactTools.length + conversationTools.length + blogTools.length + opportunityTools.length + calendarTools.length + emailTools.length + locationTools.length + emailISVTools.length + socialMediaTools.length + mediaTools.length + objectTools.length + associationTools.length + customFieldV2Tools.length + workflowTools.length + surveyTools.length + storeTools.length + productsTools.length
-        });
+        // OpenAI format: simple list of tools with id and description
+        const allTools = [...contactTools, ...conversationTools, ...blogTools, ...opportunityTools, ...calendarTools, ...emailTools, ...locationTools, ...emailISVTools, ...socialMediaTools, ...mediaTools, ...objectTools, ...associationTools, ...customFieldV2Tools, ...workflowTools, ...surveyTools, ...storeTools, ...productsTools];
+        
+        const openAITools = allTools.map(tool => ({
+          id: tool.name,
+          description: tool.description
+        }));
+        
+        res.json(openAITools);
       } catch (error) {
+        console.error('[OpenAI Tools] Error listing tools:', error);
         res.status(500).json({ error: 'Failed to list tools' });
+      }
+    });
+
+    // Tool execution endpoint (OpenAI compatible)
+    this.app.post('/execute', authGuard, async (req, res) => {
+      const { tool, input } = req.body || {};
+      
+      if (!tool) {
+        res.status(400).json({ error: 'Missing tool parameter' });
+        return;
+      }
+
+      console.log(`[OpenAI Execute] Executing tool: ${tool}`);
+
+      try {
+        // Create a dynamic GHL client instance with headers from request
+        const ghlClient = this.createDynamicGHLClient(req);
+        let result: any;
+
+        // Route to appropriate tool handler using the same logic as MCP
+        if (this.isContactTool(tool)) {
+          const dynamicContactTools = new (require('./tools/contact-tools').ContactTools)(ghlClient);
+          result = await dynamicContactTools.executeTool(tool, input || {});
+        } else if (this.isConversationTool(tool)) {
+          const dynamicConversationTools = new (require('./tools/conversation-tools').ConversationTools)(ghlClient);
+          result = await dynamicConversationTools.executeTool(tool, input || {});
+        } else {
+          // Add more tool types as needed
+          res.status(400).json({ error: `Unknown tool: ${tool}` });
+          return;
+        }
+
+        console.log(`[OpenAI Execute] Tool ${tool} executed successfully`);
+        res.json(result);
+
+      } catch (error: any) {
+        console.error(`[OpenAI Execute] Error executing tool ${tool}:`, error);
+        res.status(500).json({ error: `Tool execution failed: ${error.message}` });
       }
     });
 
@@ -383,8 +440,8 @@ class GHLMCPHttpServer {
     };
 
     // Handle both GET and POST for SSE (MCP protocol requirements)
-    this.app.get('/sse', handleSSE);
-    this.app.post('/sse', handleSSE);
+    this.app.get('/sse', authGuard, handleSSE);
+    this.app.post('/sse', authGuard, handleSSE);
 
     // Root endpoint with server info
     this.app.get('/', (req, res) => {
@@ -687,8 +744,8 @@ class GHLMCPHttpServer {
     console.log('=========================================');
     
     try {
-      // Test GHL API connection
-      await this.testGHLConnection();
+      // Note: Skip GHL API connection test in multi-tenant mode
+      // Connections are tested per-request with dynamic tokens
       
       // Start HTTP server
       this.app.listen(this.port, '0.0.0.0', () => {

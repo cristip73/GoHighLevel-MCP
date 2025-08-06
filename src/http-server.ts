@@ -179,53 +179,61 @@ class GHLMCPHttpServer {
    * Setup MCP request handlers
    */
   private setupMCPHandlers(): void {
-    // Handle list tools requests
+    // Handle list tools requests (OpenAI Custom Connectors compatible)
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      console.log('[GHL MCP HTTP] Listing available tools...');
+      console.log('[GHL MCP HTTP] Listing OpenAI Custom Connector tools...');
       
       try {
-        const contactToolDefinitions = this.contactTools.getToolDefinitions();
-        const conversationToolDefinitions = this.conversationTools.getToolDefinitions();
-        const blogToolDefinitions = this.blogTools.getToolDefinitions();
-        const opportunityToolDefinitions = this.opportunityTools.getToolDefinitions();
-        const calendarToolDefinitions = this.calendarTools.getToolDefinitions();
-        const emailToolDefinitions = this.emailTools.getToolDefinitions();
-        const locationToolDefinitions = this.locationTools.getToolDefinitions();
-        const emailISVToolDefinitions = this.emailISVTools.getToolDefinitions();
-        const socialMediaToolDefinitions = this.socialMediaTools.getTools();
-        const mediaToolDefinitions = this.mediaTools.getToolDefinitions();
-        const objectToolDefinitions = this.objectTools.getToolDefinitions();
-        const associationToolDefinitions = this.associationTools.getTools();
-        const customFieldV2ToolDefinitions = this.customFieldV2Tools.getTools();
-        const workflowToolDefinitions = this.workflowTools.getTools();
-        const surveyToolDefinitions = this.surveyTools.getTools();
-        const storeToolDefinitions = this.storeTools.getTools();
-        const productsToolDefinitions = this.productsTools.getTools();
-        
-        const allTools = [
-          ...contactToolDefinitions,
-          ...conversationToolDefinitions,
-          ...blogToolDefinitions,
-          ...opportunityToolDefinitions,
-          ...calendarToolDefinitions,
-          ...emailToolDefinitions,
-          ...locationToolDefinitions,
-          ...emailISVToolDefinitions,
-          ...socialMediaToolDefinitions,
-          ...mediaToolDefinitions,
-          ...objectToolDefinitions,
-          ...associationToolDefinitions,
-          ...customFieldV2ToolDefinitions,
-          ...workflowToolDefinitions,
-          ...surveyToolDefinitions,
-          ...storeToolDefinitions,
-          ...productsToolDefinitions
+        // Only expose search and fetch tools for OpenAI Custom Connectors
+        const openaiTools = [
+          {
+            name: 'search',
+            description: 'Search GHL contacts by query string',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                query: {
+                  type: 'string',
+                  description: 'Search query for contacts (name, email, phone, or tags)'
+                },
+                limit: {
+                  type: 'number',
+                  description: 'Maximum number of contacts to return (default: 10)',
+                  minimum: 1,
+                  maximum: 50,
+                  default: 10
+                }
+              },
+              required: ['query']
+            }
+          },
+          {
+            name: 'fetch',
+            description: 'Fetch detailed information about a specific GHL contact',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: 'string',
+                  description: 'Contact ID to fetch'
+                },
+                url: {
+                  type: 'string',
+                  description: 'Contact URL to extract ID from'
+                }
+              },
+              oneOf: [
+                { required: ['id'] },
+                { required: ['url'] }
+              ]
+            }
+          }
         ];
         
-        console.log(`[GHL MCP HTTP] Registered ${allTools.length} tools total`);
+        console.log(`[GHL MCP HTTP] Registered ${openaiTools.length} OpenAI Custom Connector tools`);
         
         return {
-          tools: allTools
+          tools: openaiTools
         };
       } catch (error) {
         console.error('[GHL MCP HTTP] Error listing tools:', error);
@@ -236,54 +244,66 @@ class GHLMCPHttpServer {
       }
     });
 
-    // Handle tool execution requests
+    // Handle tool execution requests (OpenAI Custom Connectors compatible)
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
       
-      console.log(`[GHL MCP HTTP] Executing tool: ${name}`);
+      console.log(`[GHL MCP HTTP] Executing OpenAI Custom Connector tool: ${name}`);
 
       try {
         let result: any;
 
-        // Route to appropriate tool handler
-        if (this.isContactTool(name)) {
-          result = await this.contactTools.executeTool(name, args || {});
-        } else if (this.isConversationTool(name)) {
-          result = await this.conversationTools.executeTool(name, args || {});
-        } else if (this.isBlogTool(name)) {
-          result = await this.blogTools.executeTool(name, args || {});
-        } else if (this.isOpportunityTool(name)) {
-          result = await this.opportunityTools.executeTool(name, args || {});
-        } else if (this.isCalendarTool(name)) {
-          result = await this.calendarTools.executeTool(name, args || {});
-        } else if (this.isEmailTool(name)) {
-          result = await this.emailTools.executeTool(name, args || {});
-        } else if (this.isLocationTool(name)) {
-          result = await this.locationTools.executeTool(name, args || {});
-        } else if (this.isEmailISVTool(name)) {
-          result = await this.emailISVTools.executeTool(name, args || {});
-        } else if (this.isSocialMediaTool(name)) {
-          result = await this.socialMediaTools.executeTool(name, args || {});
-        } else if (this.isMediaTool(name)) {
-          result = await this.mediaTools.executeTool(name, args || {});
-        } else if (this.isObjectTool(name)) {
-          result = await this.objectTools.executeTool(name, args || {});
-        } else if (this.isAssociationTool(name)) {
-          result = await this.associationTools.executeAssociationTool(name, args || {});
-        } else if (this.isCustomFieldV2Tool(name)) {
-          result = await this.customFieldV2Tools.executeCustomFieldV2Tool(name, args || {});
-        } else if (this.isWorkflowTool(name)) {
-          result = await this.workflowTools.executeWorkflowTool(name, args || {});
-        } else if (this.isSurveyTool(name)) {
-          result = await this.surveyTools.executeSurveyTool(name, args || {});
-        } else if (this.isStoreTool(name)) {
-          result = await this.storeTools.executeStoreTool(name, args || {});
-        } else if (this.isProductsTool(name)) {
-          result = await this.productsTools.executeProductsTool(name, args || {});
+        // Only support OpenAI Custom Connector tools: search and fetch
+        if (name === 'search') {
+          // Map search to contact search for demonstration
+          result = await this.contactTools.executeTool('search_contacts', args || {});
+          
+          // Format response for OpenAI Custom Connectors
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  results: Array.isArray(result.contacts) ? result.contacts.slice(0, 10).map((contact: any) => ({
+                    id: contact.id || 'unknown',
+                    title: `${contact.firstName} ${contact.lastName}`.trim() || contact.email || 'Contact',
+                    text: `Email: ${contact.email || 'N/A'}\nPhone: ${contact.phone || 'N/A'}\nTags: ${contact.tags?.join(', ') || 'None'}`,
+                    url: `https://app.gohighlevel.com/contacts/${contact.id}`
+                  })) : []
+                }, null, 2)
+              }
+            ]
+          };
+          
+        } else if (name === 'fetch') {
+          // Map fetch to get specific contact
+          const contactId = args?.id || (typeof args?.url === 'string' ? args.url.split('/').pop() : undefined);
+          if (contactId) {
+            result = await this.contactTools.executeTool('get_contact', { contactId });
+            
+            // Format response for OpenAI Custom Connectors  
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    id: result.id || contactId,
+                    title: `${result.firstName} ${result.lastName}`.trim() || result.email || 'Contact Details',
+                    text: `Full Contact Information:\n\nName: ${result.firstName} ${result.lastName}\nEmail: ${result.email}\nPhone: ${result.phone}\nCompany: ${result.companyName || 'N/A'}\nSource: ${result.source || 'N/A'}\nTags: ${result.tags?.join(', ') || 'None'}\n\nLast Activity: ${result.lastActivityDate || 'N/A'}\nDate Added: ${result.dateAdded || 'N/A'}`,
+                    url: `https://app.gohighlevel.com/contacts/${result.id}`
+                  }, null, 2)
+                }
+              ]
+            };
+          } else {
+            throw new Error('Missing contact ID or URL for fetch operation');
+          }
+          
         } else {
-          throw new Error(`Unknown tool: ${name}`);
+          throw new Error(`Unsupported tool for OpenAI Custom Connectors: ${name}. Only 'search' and 'fetch' are supported.`);
         }
-        
+
+        // This should not be reached due to early returns above
         console.log(`[GHL MCP HTTP] Tool ${name} executed successfully`);
         
         return {
@@ -333,43 +353,30 @@ class GHLMCPHttpServer {
       });
     });
 
-    // Tools listing endpoint (OpenAI compatible)
+    // Tools listing endpoint (OpenAI Custom Connectors compatible)
     this.app.get('/tools', authGuard, async (req, res) => {
       try {
-        const contactTools = this.contactTools.getToolDefinitions();
-        const conversationTools = this.conversationTools.getToolDefinitions();
-        const blogTools = this.blogTools.getToolDefinitions();
-        const opportunityTools = this.opportunityTools.getToolDefinitions();
-        const calendarTools = this.calendarTools.getToolDefinitions();
-        const emailTools = this.emailTools.getToolDefinitions();
-        const locationTools = this.locationTools.getToolDefinitions();
-        const emailISVTools = this.emailISVTools.getToolDefinitions();
-        const socialMediaTools = this.socialMediaTools.getTools();
-        const mediaTools = this.mediaTools.getToolDefinitions();
-        const objectTools = this.objectTools.getToolDefinitions();
-        const associationTools = this.associationTools.getTools();
-        const customFieldV2Tools = this.customFieldV2Tools.getTools();
-        const workflowTools = this.workflowTools.getTools();
-        const surveyTools = this.surveyTools.getTools();
-        const storeTools = this.storeTools.getTools();
-        const productsTools = this.productsTools.getTools();
+        // Only expose search and fetch tools for OpenAI Custom Connectors
+        const openaiTools = [
+          {
+            id: 'search',
+            description: 'Search GHL contacts by query string'
+          },
+          {
+            id: 'fetch',
+            description: 'Fetch detailed information about a specific GHL contact'
+          }
+        ];
         
-        // OpenAI format: simple list of tools with id and description
-        const allTools = [...contactTools, ...conversationTools, ...blogTools, ...opportunityTools, ...calendarTools, ...emailTools, ...locationTools, ...emailISVTools, ...socialMediaTools, ...mediaTools, ...objectTools, ...associationTools, ...customFieldV2Tools, ...workflowTools, ...surveyTools, ...storeTools, ...productsTools];
-        
-        const openAITools = allTools.map(tool => ({
-          id: tool.name,
-          description: tool.description
-        }));
-        
-        res.json(openAITools);
+        console.log(`[OpenAI Custom Connectors] Returning ${openaiTools.length} tools`);
+        res.json(openaiTools);
       } catch (error) {
-        console.error('[OpenAI Tools] Error listing tools:', error);
+        console.error('[OpenAI Custom Connectors] Error listing tools:', error);
         res.status(500).json({ error: 'Failed to list tools' });
       }
     });
 
-    // Tool execution endpoint (OpenAI compatible)
+    // Tool execution endpoint (OpenAI Custom Connectors compatible)
     this.app.post('/execute', authGuard, async (req, res) => {
       const { tool, input } = req.body || {};
       
@@ -378,31 +385,58 @@ class GHLMCPHttpServer {
         return;
       }
 
-      console.log(`[OpenAI Execute] Executing tool: ${tool}`);
+      console.log(`[OpenAI Custom Connectors] Executing tool: ${tool}`);
 
       try {
         // Create a dynamic GHL client instance with headers from request
         const ghlClient = this.createDynamicGHLClient(req);
         let result: any;
 
-        // Route to appropriate tool handler using the same logic as MCP
-        if (this.isContactTool(tool)) {
+        // Only support OpenAI Custom Connector tools: search and fetch
+        if (tool === 'search') {
+          // Map search to contact search for demonstration
           const dynamicContactTools = new (require('./tools/contact-tools').ContactTools)(ghlClient);
-          result = await dynamicContactTools.executeTool(tool, input || {});
-        } else if (this.isConversationTool(tool)) {
-          const dynamicConversationTools = new (require('./tools/conversation-tools').ConversationTools)(ghlClient);
-          result = await dynamicConversationTools.executeTool(tool, input || {});
+          result = await dynamicContactTools.executeTool('search_contacts', input || {});
+          
+          // Format response for OpenAI Custom Connectors
+          result = {
+            results: Array.isArray(result.contacts) ? result.contacts.slice(0, 10).map((contact: any) => ({
+              id: contact.id || 'unknown',
+              title: `${contact.firstName} ${contact.lastName}`.trim() || contact.email || 'Contact',
+              text: `Email: ${contact.email || 'N/A'}\nPhone: ${contact.phone || 'N/A'}\nTags: ${contact.tags?.join(', ') || 'None'}`,
+              url: `https://app.gohighlevel.com/contacts/${contact.id}`
+            })) : []
+          };
+          
+        } else if (tool === 'fetch') {
+          // Map fetch to get specific contact
+          const contactId = input?.id || (typeof input?.url === 'string' ? input.url.split('/').pop() : undefined);
+          if (!contactId) {
+            res.status(400).json({ error: 'Missing contact ID or URL for fetch operation' });
+            return;
+          }
+          
+          const dynamicContactTools = new (require('./tools/contact-tools').ContactTools)(ghlClient);
+          result = await dynamicContactTools.executeTool('get_contact', { contactId });
+          
+          // Format response for OpenAI Custom Connectors  
+          result = {
+            id: result.id || contactId,
+            title: `${result.firstName} ${result.lastName}`.trim() || result.email || 'Contact Details',
+            text: `Full Contact Information:\n\nName: ${result.firstName} ${result.lastName}\nEmail: ${result.email}\nPhone: ${result.phone}\nCompany: ${result.companyName || 'N/A'}\nSource: ${result.source || 'N/A'}\nTags: ${result.tags?.join(', ') || 'None'}\n\nLast Activity: ${result.lastActivityDate || 'N/A'}\nDate Added: ${result.dateAdded || 'N/A'}`,
+            url: `https://app.gohighlevel.com/contacts/${result.id}`
+          };
+          
         } else {
-          // Add more tool types as needed
-          res.status(400).json({ error: `Unknown tool: ${tool}` });
+          res.status(400).json({ error: `Unsupported tool for OpenAI Custom Connectors: ${tool}. Only 'search' and 'fetch' are supported.` });
           return;
         }
 
-        console.log(`[OpenAI Execute] Tool ${tool} executed successfully`);
+        console.log(`[OpenAI Custom Connectors] Tool ${tool} executed successfully`);
         res.json(result);
 
       } catch (error: any) {
-        console.error(`[OpenAI Execute] Error executing tool ${tool}:`, error);
+        console.error(`[OpenAI Custom Connectors] Error executing tool ${tool}:`, error);
         res.status(500).json({ error: `Tool execution failed: ${error.message}` });
       }
     });

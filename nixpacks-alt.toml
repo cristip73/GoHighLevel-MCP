@@ -1,0 +1,17 @@
+# Alternative Nixpacks configuration - simpler approach
+[phases.setup]
+nixPkgs = ["python3", "python3Packages.pip", "python3Packages.setuptools"]
+
+[phases.install]
+cmds = ["pip3 install -r requirements.txt"]
+
+[phases.build]
+cmds = ["python3 -c 'import fastmcp_static_server; print(\"✅ Import successful\")'"]
+
+[start]
+cmd = "python3 fastmcp_static_server.py"
+
+[variables]
+PORT = "8000"
+HOST = "0.0.0.0"
+PYTHONUNBUFFERED = "1"

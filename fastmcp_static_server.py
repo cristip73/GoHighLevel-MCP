@@ -100,7 +100,7 @@ class GHLStaticClient:
         """Test API connection"""
         headers = self._get_headers()
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 response = await client.get(
                     f"{self.base_url}/contacts",
@@ -358,6 +358,16 @@ async def main():
         logger.info(f"🌐 Server starting on http://{Config.HOST}:{Config.PORT}")
         logger.info("📡 SSE endpoint: /sse")
         logger.info("🔧 MCP endpoint: /mcp")
+        
+        # Add health endpoint for deployment monitoring
+        @mcp.resource("health://status")
+        async def health_check() -> Dict:
+            """Health check endpoint for deployment monitoring"""
+            return {
+                "status": "healthy",
+                "timestamp": datetime.now().isoformat(),
+                "service": "FastMCP GoHighLevel Server"
+            }
         
         # Run the server with HTTP transport
         mcp.run(transport="http", port=Config.PORT, host=Config.HOST)

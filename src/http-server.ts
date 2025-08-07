@@ -476,6 +476,10 @@ class GHLMCPHttpServer {
     // Handle both GET and POST for SSE (MCP protocol requirements)
     this.app.get('/sse', authGuard, handleSSE);
     this.app.post('/sse', authGuard, handleSSE);
+    
+    // ChatGPT Custom Connectors requires /sse/ with trailing slash
+    this.app.get('/sse/', authGuard, handleSSE);
+    this.app.post('/sse/', authGuard, handleSSE);
 
     // Root endpoint with server info
     this.app.get('/', (req, res) => {

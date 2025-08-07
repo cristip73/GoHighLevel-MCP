@@ -1,0 +1,15 @@
+[phases.setup]
+nixPkgs = ["python313", "pip"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[phases.build]
+cmds = ["python -m py_compile fastmcp_static_server.py"]
+
+[start]
+cmd = "python fastmcp_static_server.py"
+
+[variables]
+PORT = "8000"
+HOST = "0.0.0.0"

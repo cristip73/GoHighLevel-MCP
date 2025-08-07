@@ -1,26 +1,34 @@
-# Use Node.js 18 LTS
-FROM node:18-alpine
+# FastMCP GoHighLevel Server - Docker Image
+FROM python:3.13-slim
 
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
-RUN npm ci --only=production
+# Copy requirements first for better caching
+COPY requirements.txt .
 
-# Copy source code
-COPY . .
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Build the application
-RUN npm run build
+# Copy application code
+COPY fastmcp_static_server.py .
+COPY .env* ./
 
-# Expose the port
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Expose port
 EXPOSE 8000
 
-# Set environment to production
-ENV NODE_ENV=production
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import httpx; httpx.get('http://localhost:8000/health', timeout=5)" || exit 1
 
-# Start the HTTP server
-CMD ["npm", "start"] 
+# Run the server
+CMD ["python", "fastmcp_static_server.py"]

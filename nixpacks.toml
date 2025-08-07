@@ -11,5 +11,5 @@ cmds = ["python3 -m py_compile fastmcp_static_server.py"]
 cmd = "python3 fastmcp_static_server.py"
 
 [variables]
-PORT = "8000"
+PORT = "3300"
 HOST = "0.0.0.0"

@@ -1,0 +1,14 @@
+# Ignore Node.js files to force Python detection
+package.json
+package-lock.json
+node_modules/
+*.js
+*.ts
+tsconfig.json
+
+# Ignore other non-Python files
+.git/
+.gitignore
+*.md
+Dockerfile
+docker-compose.yml

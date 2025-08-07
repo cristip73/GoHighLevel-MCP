@@ -1,5 +1,11 @@
-[providers]
-python = "3.12"
+[phases.setup]
+nixPkgs = ["python312", "python312Packages.pip"]
+
+[phases.install]
+cmds = ["python3 -m pip install -r requirements.txt"]
+
+[phases.build]
+cmds = ["python3 -m py_compile fastmcp_static_server.py"]
 
 [start]
 cmd = "python3 fastmcp_static_server.py"

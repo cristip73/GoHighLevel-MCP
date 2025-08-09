@@ -806,7 +806,7 @@ export class ConversationTools {
   /**
    * GET CONVERSATION WITH DATE FILTER
    */
-  private async getConversationWithDateFilter(params: MCPGetConversationWithDateFilterParams): Promise<{ success: boolean; conversation: GHLConversation; messages: GHLMessage[]; totalFetched: number; message: string }> {
+  private async getConversationWithDateFilter(params: MCPGetConversationWithDateFilterParams): Promise<{ success: boolean; conversation: GHLConversation; messages: any[]; totalFetched: number; message: string }> {
     try {
       // Get conversation details
       const conversationResponse = await this.ghlClient.getConversation(params.conversationId);
@@ -816,8 +816,13 @@ export class ConversationTools {
       const startDate = params.startDate ? new Date(params.startDate) : undefined;
       const endDate = params.endDate ? new Date(params.endDate) : undefined;
       
-      // Collect all messages with pagination
-      const allMessages: GHLMessage[] = [];
+      // Collect all messages with pagination (filtered to essential fields)
+      const allMessages: Array<{
+        direction: string;
+        status: string;
+        body: string;
+        dateAdded: string;
+      }> = [];
       let lastMessageId: string | undefined;
       let hasMore = true;
       let totalFetched = 0;
@@ -858,7 +863,14 @@ export class ConversationTools {
           // Add to filtered list if within date range
           if ((!startDate || messageDate >= startDate) && 
               (!endDate || messageDate <= endDate)) {
-            allMessages.push(message);
+            // Filter to only essential fields for LLM
+            const filteredMessage = {
+              direction: message.direction,
+              status: message.status,
+              body: message.body,
+              dateAdded: message.dateAdded
+            };
+            allMessages.push(filteredMessage);
           }
         }
         

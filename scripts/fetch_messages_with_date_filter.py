@@ -111,7 +111,14 @@ class GHLMessageFetcher:
                 
                 # Add to filtered list if within date range
                 if self._is_within_date_range(message_date, start_date, end_date):
-                    filtered_messages.append(message)
+                    # Filter to only essential fields for LLM
+                    filtered_message = {
+                        'direction': message.get('direction'),
+                        'status': message.get('status'),
+                        'body': message.get('body'),
+                        'dateAdded': message.get('dateAdded')
+                    }
+                    filtered_messages.append(filtered_message)
             
             # Update pagination
             has_more = next_page_info.get('nextPage', False)

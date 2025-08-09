@@ -833,16 +833,20 @@ export class ConversationTools {
             lastMessageId
           }
         );
-        const messagesData = messagesResponse.data as GHLGetMessagesResponse;
+        const messagesData: any = messagesResponse.data;
         
-        if (!messagesData.messages || messagesData.messages.length === 0) {
+        // Handle different response structures
+        const messages = Array.isArray(messagesData) ? messagesData : 
+                        (messagesData?.messages?.messages || messagesData?.messages || []);
+        
+        if (!messages || messages.length === 0) {
           break;
         }
         
-        totalFetched += messagesData.messages.length;
+        totalFetched += messages.length;
         
         // Process each message
-        for (const message of messagesData.messages) {
+        for (const message of messages) {
           const messageDate = new Date(message.dateAdded);
           
           // Check if we've gone past the start date (messages are newest first)
@@ -858,9 +862,16 @@ export class ConversationTools {
           }
         }
         
-        // Update pagination
-        hasMore = messagesData.nextPage;
-        lastMessageId = messagesData.lastMessageId;
+        // Update pagination - handle nested structure
+        if (messagesData?.messages && typeof messagesData.messages === 'object' && !Array.isArray(messagesData.messages)) {
+          // Nested structure: data.messages.nextPage
+          hasMore = messagesData.messages.nextPage || false;
+          lastMessageId = messagesData.messages.lastMessageId;
+        } else {
+          // Direct structure: data.nextPage
+          hasMore = messagesData?.nextPage || false;
+          lastMessageId = messagesData?.lastMessageId;
+        }
       }
       
       // Sort messages by date (oldest first for readability)

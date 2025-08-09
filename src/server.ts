@@ -335,7 +335,8 @@ class GHLMCPServer {
     const conversationToolNames = [
       // Basic conversation operations
       'send_sms', 'send_email', 'search_conversations', 'get_conversation',
-      'create_conversation', 'update_conversation', 'delete_conversation', 'get_recent_messages',
+      'get_conversation_with_date_filter', 'create_conversation', 'update_conversation', 
+      'delete_conversation', 'get_recent_messages',
       // Message management
       'get_email_message', 'get_message', 'upload_message_attachments', 'update_message_status',
       // Manual message creation

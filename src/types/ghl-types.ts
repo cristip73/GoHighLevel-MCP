@@ -643,6 +643,13 @@ export interface MCPGetConversationParams {
   lastMessageId?: string;
 }
 
+export interface MCPGetConversationWithDateFilterParams {
+  conversationId: string;
+  startDate?: string;
+  endDate?: string;
+  messageTypes?: string[];
+}
+
 export interface MCPCreateConversationParams {
   contactId: string;
 }

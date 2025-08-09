@@ -10,6 +10,7 @@ import {
   MCPSendEmailParams,
   MCPSearchConversationsParams,
   MCPGetConversationParams,
+  MCPGetConversationWithDateFilterParams,
   MCPCreateConversationParams,
   MCPUpdateConversationParams,
   MCPDeleteConversationParams,
@@ -185,6 +186,39 @@ export class ConversationTools {
             lastMessageId: {
               type: 'string',
               description: 'Pagination cursor - ID of the last message from previous page to get next page of messages'
+            }
+          },
+          required: ['conversationId']
+        }
+      },
+      {
+        name: 'get_conversation_with_date_filter',
+        description: 'Get conversation messages filtered by date range. Since GHL API does not support date filtering, this tool fetches all messages and filters client-side',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: {
+              type: 'string',
+              description: 'The unique ID of the conversation to retrieve'
+            },
+            startDate: {
+              type: 'string',
+              description: 'Start date for filtering messages (ISO 8601 format, e.g., 2024-01-01T00:00:00Z)'
+            },
+            endDate: {
+              type: 'string',
+              description: 'End date for filtering messages (ISO 8601 format, e.g., 2024-12-31T23:59:59Z)'
+            },
+            messageTypes: {
+              type: 'array',
+              items: {
+                type: 'string',
+                enum: [
+                  'TYPE_SMS', 'TYPE_EMAIL', 'TYPE_CALL', 'TYPE_FACEBOOK',
+                  'TYPE_INSTAGRAM', 'TYPE_WHATSAPP', 'TYPE_LIVE_CHAT'
+                ]
+              },
+              description: 'Filter messages by type (optional)'
             }
           },
           required: ['conversationId']
@@ -596,6 +630,9 @@ export class ConversationTools {
       case 'get_conversation':
         return this.getConversation(args as MCPGetConversationParams);
       
+      case 'get_conversation_with_date_filter':
+        return this.getConversationWithDateFilter(args as MCPGetConversationWithDateFilterParams);
+      
       case 'create_conversation':
         return this.createConversation(args as MCPCreateConversationParams);
       
@@ -763,6 +800,88 @@ export class ConversationTools {
       };
     } catch (error) {
       throw new Error(`Failed to get conversation: ${error}`);
+    }
+  }
+
+  /**
+   * GET CONVERSATION WITH DATE FILTER
+   */
+  private async getConversationWithDateFilter(params: MCPGetConversationWithDateFilterParams): Promise<{ success: boolean; conversation: GHLConversation; messages: GHLMessage[]; totalFetched: number; message: string }> {
+    try {
+      // Get conversation details
+      const conversationResponse = await this.ghlClient.getConversation(params.conversationId);
+      const conversation = conversationResponse.data as GHLConversation;
+      
+      // Parse dates if provided
+      const startDate = params.startDate ? new Date(params.startDate) : undefined;
+      const endDate = params.endDate ? new Date(params.endDate) : undefined;
+      
+      // Collect all messages with pagination
+      const allMessages: GHLMessage[] = [];
+      let lastMessageId: string | undefined;
+      let hasMore = true;
+      let totalFetched = 0;
+      let reachedDateLimit = false;
+      
+      while (hasMore && !reachedDateLimit) {
+        // Fetch a page of messages
+        const messagesResponse = await this.ghlClient.getConversationMessages(
+          params.conversationId,
+          {
+            limit: 100, // Use max limit for efficiency
+            type: params.messageTypes?.join(','),
+            lastMessageId
+          }
+        );
+        const messagesData = messagesResponse.data as GHLGetMessagesResponse;
+        
+        if (!messagesData.messages || messagesData.messages.length === 0) {
+          break;
+        }
+        
+        totalFetched += messagesData.messages.length;
+        
+        // Process each message
+        for (const message of messagesData.messages) {
+          const messageDate = new Date(message.dateAdded);
+          
+          // Check if we've gone past the start date (messages are newest first)
+          if (startDate && messageDate < startDate) {
+            reachedDateLimit = true;
+            break;
+          }
+          
+          // Add to filtered list if within date range
+          if ((!startDate || messageDate >= startDate) && 
+              (!endDate || messageDate <= endDate)) {
+            allMessages.push(message);
+          }
+        }
+        
+        // Update pagination
+        hasMore = messagesData.nextPage;
+        lastMessageId = messagesData.lastMessageId;
+      }
+      
+      // Sort messages by date (oldest first for readability)
+      allMessages.sort((a, b) => 
+        new Date(a.dateAdded).getTime() - new Date(b.dateAdded).getTime()
+      );
+      
+      const dateRangeStr = [
+        startDate ? `from ${startDate.toISOString()}` : '',
+        endDate ? `to ${endDate.toISOString()}` : ''
+      ].filter(Boolean).join(' ');
+      
+      return {
+        success: true,
+        conversation,
+        messages: allMessages,
+        totalFetched,
+        message: `Retrieved ${allMessages.length} messages ${dateRangeStr} (fetched ${totalFetched} total)`
+      };
+    } catch (error) {
+      throw new Error(`Failed to get conversation with date filter: ${error}`);
     }
   }
 

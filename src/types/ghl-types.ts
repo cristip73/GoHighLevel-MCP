@@ -640,6 +640,7 @@ export interface MCPGetConversationParams {
   conversationId: string;
   limit?: number;
   messageTypes?: string[];
+  lastMessageId?: string;
 }
 
 export interface MCPCreateConversationParams {

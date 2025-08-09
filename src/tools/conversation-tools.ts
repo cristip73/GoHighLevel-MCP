@@ -181,6 +181,10 @@ export class ConversationTools {
                 ]
               },
               description: 'Filter messages by type (optional)'
+            },
+            lastMessageId: {
+              type: 'string',
+              description: 'Pagination cursor - ID of the last message from previous page to get next page of messages'
             }
           },
           required: ['conversationId']
@@ -732,18 +736,19 @@ export class ConversationTools {
   /**
    * GET CONVERSATION
    */
-  private async getConversation(params: MCPGetConversationParams): Promise<{ success: boolean; conversation: GHLConversation; messages: GHLMessage[]; hasMoreMessages: boolean; message: string }> {
+  private async getConversation(params: MCPGetConversationParams): Promise<{ success: boolean; conversation: GHLConversation; messages: GHLMessage[]; hasMoreMessages: boolean; lastMessageId: string; message: string }> {
     try {
       // Get conversation details
       const conversationResponse = await this.ghlClient.getConversation(params.conversationId);
       const conversation = conversationResponse.data as GHLConversation;
 
-      // Get messages
+      // Get messages with pagination support
       const messagesResponse = await this.ghlClient.getConversationMessages(
         params.conversationId,
         {
           limit: params.limit || 20,
-          type: params.messageTypes?.join(',')
+          type: params.messageTypes?.join(','),
+          lastMessageId: params.lastMessageId
         }
       );
       const messagesData = messagesResponse.data as GHLGetMessagesResponse;
@@ -753,6 +758,7 @@ export class ConversationTools {
         conversation,
         messages: messagesData.messages,
         hasMoreMessages: messagesData.nextPage,
+        lastMessageId: messagesData.lastMessageId,
         message: `Retrieved conversation with ${messagesData.messages.length} messages`
       };
     } catch (error) {

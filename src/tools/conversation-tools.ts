@@ -219,6 +219,18 @@ export class ConversationTools {
                 ]
               },
               description: 'Filter messages by type (optional)'
+            },
+            offset: {
+              type: 'number',
+              description: 'Number of filtered messages to skip for pagination (default: 0)',
+              default: 0
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum number of filtered messages to return (default: 50, max: 200)',
+              default: 50,
+              minimum: 1,
+              maximum: 200
             }
           },
           required: ['conversationId']
@@ -806,7 +818,20 @@ export class ConversationTools {
   /**
    * GET CONVERSATION WITH DATE FILTER
    */
-  private async getConversationWithDateFilter(params: MCPGetConversationWithDateFilterParams): Promise<{ success: boolean; conversation: GHLConversation; messages: any[]; totalFetched: number; message: string }> {
+  private async getConversationWithDateFilter(params: MCPGetConversationWithDateFilterParams): Promise<{ 
+    success: boolean; 
+    conversation: GHLConversation; 
+    messages: any[]; 
+    pagination: {
+      offset: number;
+      limit: number;
+      total: number;
+      hasMore: boolean;
+      nextOffset: number | null;
+    };
+    totalFetched: number; 
+    message: string 
+  }> {
     try {
       // Get conversation details
       const conversationResponse = await this.ghlClient.getConversation(params.conversationId);
@@ -818,6 +843,7 @@ export class ConversationTools {
       
       // Collect all messages with pagination (filtered to essential fields)
       const allMessages: Array<{
+        id: string;
         direction: string;
         status: string;
         body: string;
@@ -865,6 +891,7 @@ export class ConversationTools {
               (!endDate || messageDate <= endDate)) {
             // Filter to only essential fields for LLM
             const filteredMessage = {
+              id: message.id,
               direction: message.direction,
               status: message.status,
               body: message.body,
@@ -891,6 +918,11 @@ export class ConversationTools {
         new Date(a.dateAdded).getTime() - new Date(b.dateAdded).getTime()
       );
       
+      // Apply pagination to filtered results
+      const offset = params.offset || 0;
+      const limit = params.limit || 50;
+      const paginatedMessages = allMessages.slice(offset, offset + limit);
+      
       const dateRangeStr = [
         startDate ? `from ${startDate.toISOString()}` : '',
         endDate ? `to ${endDate.toISOString()}` : ''
@@ -899,9 +931,16 @@ export class ConversationTools {
       return {
         success: true,
         conversation,
-        messages: allMessages,
+        messages: paginatedMessages,
+        pagination: {
+          offset,
+          limit,
+          total: allMessages.length,
+          hasMore: offset + limit < allMessages.length,
+          nextOffset: offset + limit < allMessages.length ? offset + limit : null
+        },
         totalFetched,
-        message: `Retrieved ${allMessages.length} messages ${dateRangeStr} (fetched ${totalFetched} total)`
+        message: `Retrieved ${paginatedMessages.length} of ${allMessages.length} filtered messages ${dateRangeStr} (page ${Math.floor(offset / limit) + 1}, fetched ${totalFetched} total from API)`
       };
     } catch (error) {
       throw new Error(`Failed to get conversation with date filter: ${error}`);

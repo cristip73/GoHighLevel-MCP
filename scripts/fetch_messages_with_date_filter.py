@@ -50,10 +50,12 @@ class GHLMessageFetcher:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         message_types: Optional[List[str]] = None,
-        limit_per_page: int = 100
+        limit_per_page: int = 100,
+        offset: int = 0,
+        limit: int = 50
     ) -> Tuple[List[Dict], Dict]:
         """
-        Fetch messages from a conversation with date filtering
+        Fetch messages from a conversation with date filtering and pagination
         
         Args:
             conversation_id: The conversation ID to fetch messages from
@@ -61,9 +63,11 @@ class GHLMessageFetcher:
             end_date: End date for filtering (inclusive)
             message_types: Optional list of message types to filter
             limit_per_page: Number of messages to fetch per API call
+            offset: Number of filtered messages to skip for pagination
+            limit: Maximum number of filtered messages to return
             
         Returns:
-            Tuple of (filtered_messages, metadata)
+            Tuple of (paginated_messages, metadata including pagination info)
         """
         all_messages = []
         filtered_messages = []
@@ -113,6 +117,7 @@ class GHLMessageFetcher:
                 if self._is_within_date_range(message_date, start_date, end_date):
                     # Filter to only essential fields for LLM
                     filtered_message = {
+                        'id': message.get('id'),
                         'direction': message.get('direction'),
                         'status': message.get('status'),
                         'body': message.get('body'),
@@ -130,19 +135,33 @@ class GHLMessageFetcher:
         # Sort messages by date (oldest first for readability)
         filtered_messages.sort(key=lambda m: self._parse_message_date(m))
         
+        # Apply pagination to filtered results
+        total_filtered = len(filtered_messages)
+        paginated_messages = filtered_messages[offset:offset + limit]
+        
         metadata = {
             'total_fetched': total_fetched,
-            'total_filtered': len(filtered_messages),
+            'total_filtered': total_filtered,
             'pages_fetched': pages_fetched,
             'conversation_id': conversation_id,
             'filters_applied': {
                 'start_date': start_date.isoformat() if start_date else None,
                 'end_date': end_date.isoformat() if end_date else None,
                 'message_types': message_types
+            },
+            'pagination': {
+                'offset': offset,
+                'limit': limit,
+                'total': total_filtered,
+                'returned': len(paginated_messages),
+                'has_more': offset + limit < total_filtered,
+                'next_offset': offset + limit if offset + limit < total_filtered else None,
+                'page': (offset // limit) + 1 if limit > 0 else 1,
+                'total_pages': ((total_filtered - 1) // limit + 1) if limit > 0 else 1
             }
         }
         
-        return filtered_messages, metadata
+        return paginated_messages, metadata
     
     def _fetch_message_page(
         self,
@@ -274,6 +293,8 @@ def main():
     parser.add_argument('--start-date', help='Start date (ISO format)')
     parser.add_argument('--end-date', help='End date (ISO format)')
     parser.add_argument('--message-types', nargs='+', help='Message types to filter')
+    parser.add_argument('--offset', type=int, default=0, help='Number of messages to skip (pagination)')
+    parser.add_argument('--limit', type=int, default=50, help='Maximum messages to return (pagination)')
     parser.add_argument('--output', choices=['json', 'llm', 'summary'], default='summary',
                        help='Output format')
     parser.add_argument('--output-file', help='Save output to file')
@@ -292,7 +313,9 @@ def main():
         args.conversation_id,
         start_date,
         end_date,
-        args.message_types
+        args.message_types,
+        offset=args.offset,
+        limit=args.limit
     )
     
     # Format output
@@ -306,13 +329,21 @@ def main():
         output = f"Conversation {args.conversation_id} - {len(messages)} messages:\n\n"
         output += "\n".join(formatted_messages)
     else:  # summary
+        pagination = metadata.get('pagination', {})
         output = f"""
 Message Fetch Summary
 ====================
 Conversation ID: {metadata['conversation_id']}
-Total Messages Fetched: {metadata['total_fetched']}
+Total Messages Fetched from API: {metadata['total_fetched']}
 Messages After Filtering: {metadata['total_filtered']}
-Pages Fetched: {metadata['pages_fetched']}
+API Pages Fetched: {metadata['pages_fetched']}
+
+Pagination:
+- Page: {pagination.get('page', 1)} of {pagination.get('total_pages', 1)}
+- Showing: {pagination.get('returned', 0)} messages (offset {pagination.get('offset', 0)}, limit {pagination.get('limit', 50)})
+- Total Available: {pagination.get('total', 0)} messages
+- Has More: {pagination.get('has_more', False)}
+{f"- Next Offset: {pagination.get('next_offset')}" if pagination.get('next_offset') else ""}
 
 Filters Applied:
 - Start Date: {metadata['filters_applied']['start_date'] or 'None'}

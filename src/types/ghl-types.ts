@@ -648,6 +648,8 @@ export interface MCPGetConversationWithDateFilterParams {
   startDate?: string;
   endDate?: string;
   messageTypes?: string[];
+  offset?: number;
+  limit?: number;
 }
 
 export interface MCPCreateConversationParams {

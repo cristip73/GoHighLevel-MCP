@@ -231,6 +231,11 @@ export class ConversationTools {
               default: 50,
               minimum: 1,
               maximum: 200
+            },
+            truncate: {
+              type: 'boolean',
+              description: 'Truncate message bodies to 200 characters for quick overview. Useful for scanning large conversations or reducing token usage. When enabled, long messages will show first 200 chars followed by "..." (default: false)',
+              default: false
             }
           },
           required: ['conversationId']
@@ -890,11 +895,18 @@ export class ConversationTools {
           if ((!startDate || messageDate >= startDate) && 
               (!endDate || messageDate <= endDate)) {
             // Filter to only essential fields for LLM
+            let body = message.body;
+            
+            // Apply truncation if requested
+            if (params.truncate && body && body.length > 200) {
+              body = body.substring(0, 200) + '...';
+            }
+            
             const filteredMessage = {
               id: message.id,
               direction: message.direction,
               status: message.status,
-              body: message.body,
+              body: body,
               dateAdded: message.dateAdded
             };
             allMessages.push(filteredMessage);

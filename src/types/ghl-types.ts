@@ -650,6 +650,7 @@ export interface MCPGetConversationWithDateFilterParams {
   messageTypes?: string[];
   offset?: number;
   limit?: number;
+  truncate?: boolean;
 }
 
 export interface MCPCreateConversationParams {

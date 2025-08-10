@@ -52,7 +52,8 @@ class GHLMessageFetcher:
         message_types: Optional[List[str]] = None,
         limit_per_page: int = 100,
         offset: int = 0,
-        limit: int = 50
+        limit: int = 50,
+        truncate: bool = False
     ) -> Tuple[List[Dict], Dict]:
         """
         Fetch messages from a conversation with date filtering and pagination
@@ -65,6 +66,7 @@ class GHLMessageFetcher:
             limit_per_page: Number of messages to fetch per API call
             offset: Number of filtered messages to skip for pagination
             limit: Maximum number of filtered messages to return
+            truncate: Truncate message bodies to 200 characters for quick overview
             
         Returns:
             Tuple of (paginated_messages, metadata including pagination info)
@@ -116,11 +118,17 @@ class GHLMessageFetcher:
                 # Add to filtered list if within date range
                 if self._is_within_date_range(message_date, start_date, end_date):
                     # Filter to only essential fields for LLM
+                    body = message.get('body', '')
+                    
+                    # Apply truncation if requested
+                    if truncate and body and len(body) > 200:
+                        body = body[:200] + '...'
+                    
                     filtered_message = {
                         'id': message.get('id'),
                         'direction': message.get('direction'),
                         'status': message.get('status'),
-                        'body': message.get('body'),
+                        'body': body,
                         'dateAdded': message.get('dateAdded')
                     }
                     filtered_messages.append(filtered_message)
@@ -295,6 +303,7 @@ def main():
     parser.add_argument('--message-types', nargs='+', help='Message types to filter')
     parser.add_argument('--offset', type=int, default=0, help='Number of messages to skip (pagination)')
     parser.add_argument('--limit', type=int, default=50, help='Maximum messages to return (pagination)')
+    parser.add_argument('--truncate', action='store_true', help='Truncate message bodies to 200 characters')
     parser.add_argument('--output', choices=['json', 'llm', 'summary'], default='summary',
                        help='Output format')
     parser.add_argument('--output-file', help='Save output to file')
@@ -315,7 +324,8 @@ def main():
         end_date,
         args.message_types,
         offset=args.offset,
-        limit=args.limit
+        limit=args.limit,
+        truncate=args.truncate
     )
     
     # Format output

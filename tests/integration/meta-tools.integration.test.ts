@@ -9,6 +9,13 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { executePipeline, ToolExecutor, PipelineRequest } from '../../src/execution/pipeline-executor.js';
 import { executeBatch, BatchToolExecutor, BatchRequest } from '../../src/execution/batch-executor.js';
 import { RateLimiter } from '../../src/execution/rate-limiter.js';
+import {
+  MockGHLApiClientV2,
+  createStatefulMockExecutor,
+  createMockExecutor,
+  contactFixtures,
+  ERROR_TRIGGER_IDS
+} from '../mocks/ghl-api-client.mock-2.js';
 
 // Create mock rate limiter for tests
 const createTestRateLimiter = (): RateLimiter => {
@@ -431,6 +438,174 @@ describe('Meta-Tools Integration', () => {
       const summary = result.result as { totalGroups: number; uniqueContacts: number };
       expect(summary.totalGroups).toBe(3);
       expect(summary.uniqueContacts).toBe(4); // c1, c2, c3, c4 (unique)
+    });
+  });
+
+  describe('Stateful Mock Client Integration', () => {
+    let client: MockGHLApiClientV2;
+    let executor: ToolExecutor;
+
+    beforeEach(() => {
+      client = new MockGHLApiClientV2({
+        latencyMs: 0,
+        enableErrorScenarios: true,
+        enableValidation: true
+      });
+      executor = createStatefulMockExecutor(client) as unknown as ToolExecutor;
+    });
+
+    it('should execute pipeline with real stateful mock data', async () => {
+      // Seed some contacts
+      client.seedContacts(contactFixtures.mixed);
+
+      const result = await executePipeline({
+        steps: [
+          {
+            id: 'search',
+            tool_name: 'search_contacts',
+            args: { query: 'vip' }
+          }
+        ],
+        _rateLimiter: createTestRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(true);
+      const searchResult = result.result as { contacts: unknown[] };
+      // Should find contacts with 'vip' tag from mixed fixtures
+      expect(searchResult.contacts.length).toBeGreaterThan(0);
+    });
+
+    it('should handle error triggers in stateful mock', async () => {
+      const result = await executePipeline({
+        steps: [
+          {
+            id: 'get',
+            tool_name: 'get_contact',
+            args: { contactId: ERROR_TRIGGER_IDS.NOT_FOUND }
+          }
+        ],
+        _rateLimiter: createTestRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(false);
+      expect(result.error?.message).toContain('404');
+    });
+
+    it('should create and retrieve contacts through pipeline', async () => {
+      // Create a contact, then search for it
+      const result = await executePipeline({
+        steps: [
+          {
+            id: 'create',
+            tool_name: 'create_contact',
+            args: {
+              firstName: 'Pipeline',
+              lastName: 'Test',
+              email: 'pipeline.test@example.com'
+            }
+          },
+          {
+            id: 'search',
+            tool_name: 'search_contacts',
+            args: { query: 'pipeline' }
+          }
+        ],
+        _rateLimiter: createTestRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(true);
+      const searchResult = result.result as { contacts: Array<{ email: string }> };
+      expect(searchResult.contacts.some(c => c.email === 'pipeline.test@example.com')).toBe(true);
+    });
+
+    it('should execute batch operations with stateful mock', async () => {
+      // Create multiple contacts via batch
+      const batchExecutor = createStatefulMockExecutor(client) as unknown as BatchToolExecutor;
+
+      const result = await executeBatch({
+        tool_name: 'create_contact',
+        items: [
+          { firstName: 'Batch1', email: 'batch1@test.com' },
+          { firstName: 'Batch2', email: 'batch2@test.com' },
+          { firstName: 'Batch3', email: 'batch3@test.com' }
+        ],
+        options: {
+          concurrency: 2,
+          result_mode: 'detail',
+          rateLimiter: createTestRateLimiter()
+        }
+      }, batchExecutor);
+
+      expect(result.success).toBe(true);
+      expect(result.data.succeeded).toBe(3);
+
+      // Verify contacts were actually created in state
+      const storedContacts = client.getStoredContacts();
+      const batchEmails = storedContacts
+        .map(c => c.email)
+        .filter(e => e?.startsWith('batch'));
+      expect(batchEmails.length).toBe(3);
+    });
+
+    it('should handle validation errors in stateful mock', async () => {
+      const batchExecutor = createStatefulMockExecutor(client) as unknown as BatchToolExecutor;
+
+      // Try to create contacts without required email/phone
+      const result = await executeBatch({
+        tool_name: 'create_contact',
+        items: [
+          { firstName: 'NoEmail' }, // Missing email AND phone
+          { firstName: 'HasEmail', email: 'valid@test.com' }
+        ],
+        options: {
+          on_error: 'continue',
+          result_mode: 'detail',
+          rateLimiter: createTestRateLimiter()
+        }
+      }, batchExecutor);
+
+      // One should fail validation, one should succeed
+      expect(result.data.succeeded).toBe(1);
+      expect(result.data.failed).toBe(1);
+    });
+
+    it('should test pipeline with loop using mock factory', async () => {
+      // Use createMockExecutor for simpler test
+      const mockExecutor = createMockExecutor({
+        results: {
+          get_contacts: [
+            { id: 'c1', name: 'Alice', hasAccount: true },
+            { id: 'c2', name: 'Bob', hasAccount: false },
+            { id: 'c3', name: 'Charlie', hasAccount: true }
+          ],
+          send_welcome: (args: any) => ({
+            messageId: `msg_${args.contactId}`,
+            sent: true
+          })
+        },
+        delayMs: 5
+      }) as unknown as ToolExecutor;
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'contacts', tool_name: 'get_contacts', args: {} },
+          {
+            id: 'messages',
+            tool_name: 'send_welcome',
+            args: { contactId: '{{item.id}}', name: '{{item.name}}' },
+            loop: '{{contacts}}',
+            filter: '{{item.hasAccount}}'  // Only send to contacts with accounts
+          }
+        ],
+        _rateLimiter: createTestRateLimiter()
+      }, mockExecutor);
+
+      expect(result.success).toBe(true);
+      // Only Alice and Charlie have accounts
+      const messages = result.result as Array<{ messageId: string }>;
+      expect(messages.length).toBe(2);
+      expect(messages[0].messageId).toBe('msg_c1');
+      expect(messages[1].messageId).toBe('msg_c3');
     });
   });
 });

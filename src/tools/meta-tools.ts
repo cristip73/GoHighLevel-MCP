@@ -13,6 +13,7 @@ import { ToolRegistry } from '../registry/tool-registry.js';
 import { DOMAIN_NAMES, ExecuteOptions, ReturnMode } from '../registry/types.js';
 import { applyProjection, applyFilter, applyReturnMode } from '../execution/index.js';
 import { executePipeline, PipelineRequest } from '../execution/pipeline-executor.js';
+import { executeBatch, BatchRequest } from '../execution/batch-executor.js';
 
 /**
  * Meta Tools class - exposes discovery and execution tools
@@ -171,6 +172,65 @@ export class MetaTools {
           },
           required: ['steps']
         }
+      },
+      {
+        name: 'execute_batch',
+        description: 'Execute a single tool for multiple items with rate limiting and parallel processing. Use this for bulk operations like updating many contacts, sending multiple messages, or batch data processing.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tool_name: {
+              type: 'string',
+              description: 'Name of the tool to execute for each item'
+            },
+            items: {
+              type: 'array',
+              description: 'Array of argument objects, one per item to process (max 100)',
+              items: {
+                type: 'object',
+                additionalProperties: true
+              },
+              minItems: 1,
+              maxItems: 100
+            },
+            options: {
+              type: 'object',
+              description: 'Optional batch execution options',
+              properties: {
+                concurrency: {
+                  type: 'number',
+                  description: 'Maximum parallel executions (default: 5, max: 10)',
+                  default: 5,
+                  minimum: 1,
+                  maximum: 10
+                },
+                on_error: {
+                  type: 'string',
+                  enum: ['continue', 'stop'],
+                  description: 'Behavior on error: "continue" processes remaining items (default), "stop" halts execution'
+                },
+                result_mode: {
+                  type: 'string',
+                  enum: ['summary', 'detail'],
+                  description: 'Return mode: "summary" returns counts only (default), "detail" returns all results'
+                },
+                select_fields: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Field projection for detail mode (reduces result size)'
+                },
+                max_retries: {
+                  type: 'number',
+                  description: 'Maximum retries per failed item (default: 0, max: 3)',
+                  default: 0,
+                  minimum: 0,
+                  maximum: 3
+                }
+              }
+            }
+          },
+          required: ['tool_name', 'items']
+        }
       }
     ];
   }
@@ -194,6 +254,9 @@ export class MetaTools {
 
       case 'execute_pipeline':
         return this.executePipeline_(args);
+
+      case 'execute_batch':
+        return this.executeBatch_(args);
 
       default:
         throw new Error(`Unknown meta-tool: ${name}`);
@@ -436,9 +499,49 @@ export class MetaTools {
   }
 
   /**
+   * Execute a batch of tool calls server-side
+   */
+  private async executeBatch_(args: Record<string, unknown>): Promise<unknown> {
+    const request = args as unknown as BatchRequest;
+
+    if (!request.tool_name) {
+      return {
+        success: false,
+        error: 'tool_name is required',
+        hint: 'Specify the tool to execute for each item'
+      };
+    }
+
+    if (!request.items || !Array.isArray(request.items)) {
+      return {
+        success: false,
+        error: 'items array is required',
+        hint: 'Provide an array of argument objects, one per item'
+      };
+    }
+
+    // Create executor function that uses the registry
+    const executor = async (toolName: string, toolArgs: Record<string, unknown>) => {
+      return this.registry.execute(toolName, toolArgs);
+    };
+
+    // Execute the batch
+    const result = await executeBatch(request, executor);
+
+    // Add hints for common errors
+    if (!result.success && result.data.errors.length > 0) {
+      const response: Record<string, unknown> = { ...result };
+      response.hint = `Use describe_tools(['${request.tool_name}']) to see required parameters`;
+      return response;
+    }
+
+    return result;
+  }
+
+  /**
    * Check if a tool name is a meta-tool
    */
   isMetaTool(name: string): boolean {
-    return ['search_tools', 'describe_tools', 'execute_tool', 'list_domains', 'execute_pipeline'].includes(name);
+    return ['search_tools', 'describe_tools', 'execute_tool', 'list_domains', 'execute_pipeline', 'execute_batch'].includes(name);
   }
 }

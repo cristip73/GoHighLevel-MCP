@@ -180,3 +180,108 @@ interface StepExecutionResult {
 - Real workflows rarely exceed 5-10 steps
 - Timeout provides additional protection
 - Easy to increase later if needed
+
+---
+
+## Phase 3: Batch Operations
+
+### ADR-012: Token Bucket Rate Limiting
+
+**Context:** Need to respect GHL API limits (100 requests/minute) during batch operations.
+
+**Decision:** Implement token bucket algorithm with shared limiter instance.
+
+**Alternatives considered:**
+- Sliding window - more complex, similar results
+- Fixed window - can cause burst at window boundaries
+- Leaky bucket - harder to implement backpressure
+
+**Rationale:**
+- Token bucket is simple and well-understood
+- Allows burst up to capacity (100 req) when tokens available
+- Automatic refill over time
+- Shared instance ensures coordination across all batch operations
+- Test-friendly via dependency injection
+
+---
+
+### ADR-013: Batch Concurrency Model
+
+**Context:** How to process multiple items in parallel while respecting rate limits?
+
+**Decision:** Batch processing with configurable concurrency (default: 5, max: 10).
+
+**Implementation:**
+- Process items in batches of `concurrency` size
+- Each item acquires a rate limit token before execution
+- Promise.all for parallel execution within batch
+- Sequential batches to prevent overwhelming the system
+
+**Rationale:**
+- 5 concurrent = good balance between speed and API friendliness
+- Cap at 10 to prevent excessive parallel connections
+- Simpler than p-limit library (no external dependency)
+- Easy to reason about and debug
+
+---
+
+### ADR-014: Error Handling Strategy
+
+**Context:** What happens when some items fail in a batch?
+
+**Decision:** Two modes: `continue` (default) and `stop`.
+
+- `continue`: Collect failed items separately, process all remaining
+- `stop`: Halt on first error, return partial results
+
+**Rationale:**
+- `continue` is ideal for idempotent operations (update contacts)
+- `stop` is safer for non-idempotent operations (send SMS)
+- Failed items collected with error details for retry/debugging
+- Success items not blocked by failures (in continue mode)
+
+---
+
+### ADR-015: Result Aggregation Modes
+
+**Context:** How to return results without polluting LLM context?
+
+**Decision:** Two modes: `summary` (default) and `detail`.
+
+- `summary`: `{total, succeeded, failed, duration_ms, errors: [{index, error}]}`
+- `detail`: Same + `results: [{index, result}]` with optional projection
+
+**Rationale:**
+- Summary is minimal - LLM just needs to know if batch succeeded
+- Detail available when results matter (e.g., get created IDs)
+- Projection (`select_fields`) reduces detail mode size
+- Errors always included for debugging
+
+---
+
+### ADR-016: Exponential Backoff with Jitter
+
+**Context:** How to handle retries for failed items?
+
+**Decision:** Exponential backoff with jitter: `baseDelay * 2^attempt + random(0-25%)`
+
+**Rationale:**
+- Exponential growth prevents hammering failing services
+- Jitter prevents "thundering herd" when multiple items retry simultaneously
+- Default 0 retries - explicit opt-in prevents unexpected delays
+- Max 3 retries caps total wait time
+
+---
+
+### ADR-017: Batch Size Limits
+
+**Context:** How many items can be processed in a single batch?
+
+**Decision:** Maximum 100 items per batch.
+
+**Rationale:**
+- 100 items = 100 tokens = full rate limit capacity
+- Prevents single batch from consuming excessive resources
+- Typical use cases rarely exceed 50 items
+- Multiple batches can be used for larger workloads
+- Matches GHL API rate limit (100 req/min)

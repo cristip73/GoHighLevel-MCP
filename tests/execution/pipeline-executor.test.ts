@@ -339,5 +339,153 @@ describe('Pipeline Executor', () => {
         notify: { message_id: 'msg_123', sent_to: 'c1' }
       });
     });
+
+    it('should include complete results in step_results for partial recovery', async () => {
+      const executor = createMockExecutor({
+        step_a: { id: '1', data: 'important_data_a' },
+        step_b: { id: '2', data: 'important_data_b' },
+        fail_step: null
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'a', tool_name: 'step_a', args: {} },
+          { id: 'b', tool_name: 'step_b', args: {} },
+          { id: 'c', tool_name: 'fail_step', args: {} }
+        ]
+      }, executor);
+
+      expect(result.success).toBe(false);
+      expect(result.step_results).toBeDefined();
+      // Verify step_results contains complete data, not just metadata
+      expect(result.step_results?.a).toMatchObject({
+        success: true,
+        result: { id: '1', data: 'important_data_a' }
+      });
+      expect(result.step_results?.b).toMatchObject({
+        success: true,
+        result: { id: '2', data: 'important_data_b' }
+      });
+    });
+
+    it('should timeout when pipeline exceeds timeout_ms', async () => {
+      const slowExecutor: ToolExecutor = async () => {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        return { success: true, result: { ok: true } };
+      };
+
+      const result = await executePipeline({
+        steps: [
+          { id: 's1', tool_name: 'slow', args: {} },
+          { id: 's2', tool_name: 'slow', args: {} },
+          { id: 's3', tool_name: 'slow', args: {} }
+        ],
+        timeout_ms: 50  // Very short timeout
+      }, slowExecutor);
+
+      // Should timeout after first step completes
+      expect(result.success).toBe(false);
+      expect(result.timed_out).toBe(true);
+      expect(result.error?.message).toContain('timeout');
+    });
+
+    it('should execute full 4-step workflow: search → filter → send_sms → verify (Criteriul 7)', async () => {
+      // Simulates: search contacts → filter by status → send SMS → verify delivery
+      const executor = createMockExecutor({
+        search_contacts: (args: any) => [
+          { id: 'c1', name: 'John', phone: '+1111', status: 'active' },
+          { id: 'c2', name: 'Jane', phone: '+2222', status: 'inactive' },
+          { id: 'c3', name: 'Bob', phone: '+3333', status: 'active' }
+        ],
+        filter_contacts: (args: any) => {
+          // Filter active contacts
+          const contacts = args.contacts || [];
+          return contacts.filter((c: any) => c.status === args.status);
+        },
+        send_sms: (args: any) => ({
+          message_id: `msg_${Date.now()}`,
+          contact_id: args.contactId,
+          phone: args.phone,
+          status: 'queued'
+        }),
+        verify_delivery: (args: any) => ({
+          message_id: args.messageId,
+          delivered: true,
+          delivered_at: new Date().toISOString()
+        })
+      });
+
+      const result = await executePipeline({
+        steps: [
+          {
+            id: 'search',
+            tool_name: 'search_contacts',
+            args: { query: 'all', limit: 100 }
+          },
+          {
+            id: 'filter',
+            tool_name: 'filter_contacts',
+            args: {
+              contacts: '{{search}}',
+              status: 'active'
+            }
+          },
+          {
+            id: 'send',
+            tool_name: 'send_sms',
+            args: {
+              contactId: '{{filter[0].id}}',
+              phone: '{{filter[0].phone}}',
+              message: 'Hello {{filter[0].name}}!'
+            }
+          },
+          {
+            id: 'verify',
+            tool_name: 'verify_delivery',
+            args: {
+              messageId: '{{send.message_id}}'
+            }
+          }
+        ],
+        return: {
+          send: ['message_id', 'status'],
+          verify: ['delivered']
+        }
+      }, executor);
+
+      expect(result.success).toBe(true);
+      expect(result.steps_completed).toBe(4);
+      expect(result.total_steps).toBe(4);
+      // Verify return template produces summary only
+      expect(result.result).toEqual({
+        send: { message_id: expect.any(String), status: 'queued' },
+        verify: { delivered: true }
+      });
+    });
+
+    it('should validate timeout_ms bounds', () => {
+      const errors1 = validatePipeline({
+        steps: [{ id: 's1', tool_name: 'test', args: {} }],
+        timeout_ms: -100
+      });
+      expect(errors1.some(e => e.includes('timeout_ms'))).toBe(true);
+
+      const errors2 = validatePipeline({
+        steps: [{ id: 's1', tool_name: 'test', args: {} }],
+        timeout_ms: 500000  // > 5 min
+      });
+      expect(errors2.some(e => e.includes('timeout_ms') && e.includes('300000'))).toBe(true);
+    });
+
+    it('should reject pipelines with more than 20 steps', () => {
+      const steps = Array.from({ length: 25 }, (_, i) => ({
+        id: `step_${i}`,
+        tool_name: 'test',
+        args: {}
+      }));
+
+      const errors = validatePipeline({ steps });
+      expect(errors.some(e => e.includes('20 steps'))).toBe(true);
+    });
   });
 });

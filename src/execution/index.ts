@@ -34,5 +34,6 @@ export {
   type ReturnTemplate,
   type StepResult,
   type StepError,
+  type StepExecutionResult,
   type ToolExecutor
 } from './pipeline-executor.js';

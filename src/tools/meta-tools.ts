@@ -161,6 +161,12 @@ export class MetaTools {
                 type: 'array',
                 items: { type: 'string' }
               }
+            },
+            timeout_ms: {
+              type: 'number',
+              description: 'Optional timeout in milliseconds for the entire pipeline (default: 120000ms = 2 min, max: 300000ms = 5 min)',
+              minimum: 0,
+              maximum: 300000
             }
           },
           required: ['steps']

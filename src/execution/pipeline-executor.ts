@@ -45,6 +45,8 @@ export interface PipelineRequest {
   steps: PipelineStep[];
   /** Optional template specifying which fields to return */
   return?: ReturnTemplate;
+  /** Optional timeout in milliseconds for the entire pipeline (default: 120000ms = 2 min) */
+  timeout_ms?: number;
 }
 
 /**
@@ -70,6 +72,16 @@ export interface StepError {
 }
 
 /**
+ * Detailed step execution result (for partial results)
+ */
+export interface StepExecutionResult {
+  success: boolean;
+  duration_ms: number;
+  /** The actual result data from this step (for partial recovery) */
+  result?: unknown;
+}
+
+/**
  * Full pipeline execution result
  */
 export interface PipelineResult {
@@ -88,8 +100,10 @@ export interface PipelineResult {
     message: string;
     validation_errors?: string[];
   };
-  /** Results from completed steps (for debugging/partial recovery) */
-  step_results?: Record<string, unknown>;
+  /** Results from completed steps with full data (for debugging/partial recovery) */
+  step_results?: Record<string, StepExecutionResult>;
+  /** Set to true if pipeline was stopped due to timeout */
+  timed_out?: boolean;
 }
 
 /**
@@ -170,6 +184,20 @@ export function validatePipeline(request: PipelineRequest): string[] {
     }
   }
 
+  // Validate timeout_ms if provided
+  if (request.timeout_ms !== undefined) {
+    if (typeof request.timeout_ms !== 'number' || request.timeout_ms < 0) {
+      errors.push('"timeout_ms" must be a non-negative number');
+    } else if (request.timeout_ms > 300000) {
+      errors.push('"timeout_ms" cannot exceed 300000 (5 minutes)');
+    }
+  }
+
+  // Validate max steps (prevent abuse)
+  if (request.steps.length > 20) {
+    errors.push('Pipeline cannot have more than 20 steps');
+  }
+
   // Validate return template if provided
   if (request.return) {
     for (const stepId of Object.keys(request.return)) {
@@ -205,6 +233,9 @@ export function applyReturnTemplate(
   return result;
 }
 
+/** Default pipeline timeout: 2 minutes */
+const DEFAULT_TIMEOUT_MS = 120000;
+
 /**
  * Execute a pipeline of tool calls
  *
@@ -217,6 +248,7 @@ export async function executePipeline(
   executor: ToolExecutor
 ): Promise<PipelineResult> {
   const startTime = Date.now();
+  const timeoutMs = request.timeout_ms ?? DEFAULT_TIMEOUT_MS;
 
   // Validate pipeline structure
   const validationErrors = validatePipeline(request);
@@ -235,11 +267,30 @@ export async function executePipeline(
   }
 
   const context: PipelineContext = {};
-  const stepResults: Record<string, unknown> = {};
+  const stepResults: Record<string, StepExecutionResult> = {};
+
+  // Helper to check if we've exceeded timeout
+  const isTimedOut = () => (Date.now() - startTime) > timeoutMs;
 
   // Execute steps sequentially
   for (let i = 0; i < request.steps.length; i++) {
     const step = request.steps[i];
+
+    // Check timeout before starting step
+    if (isTimedOut()) {
+      return {
+        success: false,
+        steps_completed: i,
+        total_steps: request.steps.length,
+        duration_ms: Date.now() - startTime,
+        error: {
+          step_id: step.id,
+          message: `Pipeline timeout exceeded (${timeoutMs}ms)`
+        },
+        step_results: Object.keys(stepResults).length > 0 ? stepResults : undefined,
+        timed_out: true
+      };
+    }
 
     // Apply delay if specified
     if (step.delay_ms && step.delay_ms > 0) {
@@ -255,7 +306,7 @@ export async function executePipeline(
     const stepDuration = Date.now() - stepStartTime;
 
     if (!execResult.success) {
-      // Step failed - stop pipeline and return error
+      // Step failed - stop pipeline and return error with partial results
       return {
         success: false,
         steps_completed: i,
@@ -272,9 +323,12 @@ export async function executePipeline(
 
     // Store result in context for subsequent steps
     context[step.id] = execResult.result;
+
+    // Store complete step result including data for partial recovery
     stepResults[step.id] = {
       success: true,
-      duration_ms: stepDuration
+      duration_ms: stepDuration,
+      result: execResult.result
     };
   }
 

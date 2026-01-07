@@ -128,30 +128,82 @@ Transform the GoHighLevel MCP Server from a simple tool catalog to a **context-e
 
 ---
 
-## Phase 4: Testing & Documentation
+## Phase 4: Testing, Documentation & Loop Support (Extended)
 
-**Goal:** Ensure reliability and provide clear usage guides.
+**Goal:** Add loop support to pipeline, custom file paths, ensure reliability and provide clear usage guides.
 
 ### Tasks
 
-1. **Unit tests**
-   - Field projection
+1. **Loop Support in Pipeline** (NEW)
+   - Add `loop` property to iterate over arrays
+   - Add `filter` property for conditional execution
+   - Implement parallel execution within loops using batch executor
+   - Support `{{item}}` syntax for accessing current loop item
+
+2. **Custom File Path for Return Mode** (NEW)
+   - Allow `file_path` option in `return_mode: "file"`
+   - Support custom output locations instead of temp files
+
+3. **Unit tests**
+   - Pipeline loop functionality
+   - Field projection (90%+ coverage)
    - Filter expression parser
    - Variable interpolation
    - Batch executor
 
-2. **Integration tests**
-   - Full pipeline execution
-   - Error scenarios
-   - Rate limiting behavior
+4. **Integration tests**
+   - Pipeline with loops (search → loop conversations → loop SMS)
+   - Batch execution with rate limiting and error handling
 
-3. **Documentation**
-   - Update implementation report
-   - Usage examples for each new feature
+5. **Documentation**
+   - Update implementation report with loop support examples
+   - Usage examples for all features
    - Migration guide from basic execute_tool
 
 ### Acceptance Criteria
 - See `phases/phase-4.json`
+
+---
+
+## Addendum: Phase 4 Extension (2026-01-07)
+
+Based on real-world testing documented in `_DOCS/_RESOURCES/GHL_MCP_TESTING_REPORT.md`, Phase 4 was extended to address a critical limitation: **pipeline executor lacked loop support**.
+
+### Problem Identified
+
+The original pipeline required manual specification of each array index:
+```javascript
+// BEFORE: Manual indexing (inflexible, verbose)
+steps: [
+  { id: "conv0", args: { contactId: "{{search.contacts[0].id}}" } },
+  { id: "conv1", args: { contactId: "{{search.contacts[1].id}}" } },
+  { id: "conv2", args: { contactId: "{{search.contacts[2].id}}" } },
+  // ... must know count in advance!
+]
+```
+
+### Solution Implemented
+
+Loop support with `{{item}}` syntax:
+```javascript
+// AFTER: Dynamic iteration (flexible, concise)
+steps: [
+  {
+    id: "conversations",
+    tool_name: "search_conversations",
+    loop: "{{search.contacts}}",
+    args: { contactId: "{{item.id}}" }
+  }
+]
+```
+
+### Additional Improvements
+
+1. **Filter support**: Skip items conditionally with `filter: "{{item.conversations.length > 0}}"`
+2. **Parallel loops**: Configurable `concurrency` for loop execution
+3. **Custom file paths**: `file_path` option for `return_mode: "file"`
+
+*Addendum created: 2026-01-07*
 
 ---
 

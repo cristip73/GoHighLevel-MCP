@@ -61,6 +61,30 @@ describe('Field Projector', () => {
       expect(getValueByPath(null, 'id')).toBeUndefined();
       expect(getValueByPath(undefined, 'id')).toBeUndefined();
     });
+
+    it('should return undefined when accessing property on primitive', () => {
+      // Line 33-34: typeof current !== 'object'
+      expect(getValueByPath('string', 'length')).toBeUndefined();
+      expect(getValueByPath(123, 'toString')).toBeUndefined();
+    });
+
+    it('should return undefined when accessing array index on non-array', () => {
+      // Line 38-39: !Array.isArray(current)
+      const obj = { items: 'not an array' };
+      expect(getValueByPath(obj, 'items[0]')).toBeUndefined();
+    });
+
+    it('should return undefined for null in path chain', () => {
+      // Line 28-29: current === null
+      const obj = { user: null };
+      expect(getValueByPath(obj, 'user.name')).toBeUndefined();
+    });
+
+    it('should handle malformed path with unclosed bracket', () => {
+      // Lines 89-91: malformed path
+      const obj = { items: [1, 2, 3] };
+      expect(getValueByPath(obj, 'items[0')).toBeUndefined();
+    });
   });
 
   describe('projectFields', () => {
@@ -95,6 +119,39 @@ describe('Field Projector', () => {
     it('should project array elements', () => {
       const result = projectFields(testObj, ['tags[0]']);
       expect(result).toEqual({ tags: ['a'] });
+    });
+
+    it('should project deeply nested array elements', () => {
+      // Lines 163-168: setValueByPath with array indexing as intermediate segment
+      const obj = {
+        data: {
+          users: [
+            { name: 'John', scores: [100, 90] },
+            { name: 'Jane', scores: [95, 85] }
+          ]
+        }
+      };
+      const result = projectFields(obj, ['data.users[0].scores[1]']);
+      expect(result).toEqual({
+        data: {
+          users: [
+            { scores: [undefined, 90] }
+          ]
+        }
+      });
+    });
+
+    it('should project multiple nested array paths', () => {
+      const obj = {
+        items: [
+          { values: [{ x: 1 }, { x: 2 }] },
+          { values: [{ x: 3 }, { x: 4 }] }
+        ]
+      };
+      const result = projectFields(obj, ['items[1].values[0].x']);
+      expect(result).toEqual({
+        items: [undefined, { values: [{ x: 3 }] }]
+      });
     });
 
     it('should ignore non-existent fields', () => {

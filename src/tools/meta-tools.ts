@@ -102,7 +102,11 @@ export class MetaTools {
                 return_mode: {
                   type: 'string',
                   enum: ['inline', 'summary', 'file'],
-                  description: 'Return mode: inline (default, full data), summary (count + 3 samples), file (write to temp file)'
+                  description: 'Return mode: inline (default, full data), summary (count + 3 samples), file (write to file)'
+                },
+                file_path: {
+                  type: 'string',
+                  description: 'Custom file path for return_mode: "file". If not specified, writes to temp directory. Auto-adds .json extension if missing.'
                 }
               }
             }
@@ -121,7 +125,7 @@ export class MetaTools {
       },
       {
         name: 'execute_pipeline',
-        description: 'Execute a multi-step workflow server-side, returning only the final result. Steps execute sequentially with variable passing between them. Use this to reduce context pollution by executing complex workflows in a single tool call.',
+        description: 'Execute a multi-step workflow server-side, returning only the final result. Steps execute sequentially with variable passing between them. Supports loops for iterating over arrays with parallel execution. Use this to reduce context pollution by executing complex workflows in a single tool call.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -141,7 +145,7 @@ export class MetaTools {
                   },
                   args: {
                     type: 'object',
-                    description: 'Arguments for the tool. Use {{step_id.field}} syntax to reference results from previous steps',
+                    description: 'Arguments for the tool. Use {{step_id.field}} syntax to reference results from previous steps. In loops, use {{item}} for current item and {{index}} for position.',
                     additionalProperties: true
                   },
                   delay_ms: {
@@ -149,6 +153,21 @@ export class MetaTools {
                     description: 'Optional delay in milliseconds before executing this step (max 30000)',
                     minimum: 0,
                     maximum: 30000
+                  },
+                  loop: {
+                    type: 'string',
+                    description: 'Loop over an array from a previous step. Use {{item}} in args to reference current item. Example: "{{search.contacts}}"'
+                  },
+                  filter: {
+                    type: 'string',
+                    description: 'Filter condition for loop - skip items where this resolves to falsy. Example: "{{item.conversations.length}}" skips items with no conversations.'
+                  },
+                  concurrency: {
+                    type: 'number',
+                    description: 'Parallel executions for loop steps (default: 5, max: 10)',
+                    minimum: 1,
+                    maximum: 10,
+                    default: 5
                   }
                 },
                 required: ['id', 'tool_name', 'args']
@@ -422,8 +441,8 @@ export class MetaTools {
     // 4. Apply return mode
     const returnMode = options.return_mode as ReturnMode | undefined;
     if (returnMode && returnMode !== 'inline') {
-      result = applyReturnMode(result, returnMode, toolName);
-      transformations.push(`return_mode: ${returnMode}`);
+      result = applyReturnMode(result, returnMode, toolName, options.file_path);
+      transformations.push(`return_mode: ${returnMode}${options.file_path ? ` (path: ${options.file_path})` : ''}`);
     }
 
     // Build response

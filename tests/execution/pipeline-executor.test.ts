@@ -11,6 +11,16 @@ import {
   PipelineRequest,
   ToolExecutor
 } from '../../src/execution/pipeline-executor.js';
+import { RateLimiter } from '../../src/execution/rate-limiter.js';
+
+// Create a mock rate limiter that always grants tokens immediately
+const createMockRateLimiter = (): RateLimiter => {
+  return new RateLimiter({
+    maxTokens: 1000,
+    refillRate: 1000,
+    refillIntervalMs: 100
+  });
+};
 
 describe('Pipeline Executor', () => {
   // Mock executor that simulates tool execution
@@ -486,6 +496,328 @@ describe('Pipeline Executor', () => {
 
       const errors = validatePipeline({ steps });
       expect(errors.some(e => e.includes('20 steps'))).toBe(true);
+    });
+  });
+
+  describe('Loop Support', () => {
+    it('should validate loop property is a variable reference', () => {
+      const errors = validatePipeline({
+        steps: [
+          { id: 'data', tool_name: 'get_data', args: {} },
+          { id: 'loop', tool_name: 'process', args: {}, loop: 'not_a_variable' }
+        ]
+      });
+      expect(errors.some(e => e.includes('loop') && e.includes('variable reference'))).toBe(true);
+    });
+
+    it('should reject filter without loop', () => {
+      const errors = validatePipeline({
+        steps: [
+          { id: 'step1', tool_name: 'test', args: {}, filter: '{{item.active}}' }
+        ]
+      });
+      expect(errors.some(e => e.includes('filter') && e.includes('loop'))).toBe(true);
+    });
+
+    it('should reject concurrency without loop', () => {
+      const errors = validatePipeline({
+        steps: [
+          { id: 'step1', tool_name: 'test', args: {}, concurrency: 5 }
+        ]
+      });
+      expect(errors.some(e => e.includes('concurrency') && e.includes('loop'))).toBe(true);
+    });
+
+    it('should reject invalid concurrency value', () => {
+      const errors = validatePipeline({
+        steps: [
+          { id: 'data', tool_name: 'get', args: {} },
+          { id: 'loop', tool_name: 'process', args: {}, loop: '{{data.items}}', concurrency: 20 }
+        ]
+      });
+      expect(errors.some(e => e.includes('concurrency') && e.includes('10'))).toBe(true);
+    });
+
+    it('should execute loop over array', async () => {
+      const processedItems: unknown[] = [];
+      const executor = createMockExecutor({
+        get_items: [
+          { id: '1', name: 'Item 1' },
+          { id: '2', name: 'Item 2' },
+          { id: '3', name: 'Item 3' }
+        ],
+        process_item: (args: any) => {
+          processedItems.push(args);
+          return { processed: args.id, name: args.name };
+        }
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'items', tool_name: 'get_items', args: {} },
+          {
+            id: 'processed',
+            tool_name: 'process_item',
+            args: { id: '{{item.id}}', name: '{{item.name}}' },
+            loop: '{{items}}'
+          }
+        ],
+        _rateLimiter: createMockRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(true);
+      expect(result.steps_completed).toBe(2);
+      expect(processedItems).toHaveLength(3);
+      expect(Array.isArray(result.result)).toBe(true);
+      expect((result.result as unknown[]).length).toBe(3);
+    });
+
+    it('should use {{item}} and {{index}} in loop', async () => {
+      const calls: unknown[] = [];
+      const executor = createMockExecutor({
+        get_data: ['a', 'b', 'c'],
+        log: (args: any) => {
+          calls.push(args);
+          return { logged: true };
+        }
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'data', tool_name: 'get_data', args: {} },
+          {
+            id: 'logs',
+            tool_name: 'log',
+            args: { value: '{{item}}', position: '{{index}}' },
+            loop: '{{data}}'
+          }
+        ],
+        _rateLimiter: createMockRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(true);
+      expect(calls).toEqual([
+        { value: 'a', position: 0 },
+        { value: 'b', position: 1 },
+        { value: 'c', position: 2 }
+      ]);
+    });
+
+    it('should filter loop items', async () => {
+      const processed: unknown[] = [];
+      const executor = createMockExecutor({
+        get_contacts: [
+          { id: '1', active: true },
+          { id: '2', active: false },
+          { id: '3', active: true },
+          { id: '4', active: false }
+        ],
+        notify: (args: any) => {
+          processed.push(args.id);
+          return { notified: args.id };
+        }
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'contacts', tool_name: 'get_contacts', args: {} },
+          {
+            id: 'notified',
+            tool_name: 'notify',
+            args: { id: '{{item.id}}' },
+            loop: '{{contacts}}',
+            filter: '{{item.active}}'
+          }
+        ],
+        _rateLimiter: createMockRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(true);
+      // Only active contacts should be processed
+      expect(processed).toEqual(['1', '3']);
+      expect((result.result as unknown[]).length).toBe(2);
+    });
+
+    it('should filter by array length', async () => {
+      const processed: unknown[] = [];
+      const executor = createMockExecutor({
+        get_contacts: [
+          { id: '1', conversations: ['c1', 'c2'] },
+          { id: '2', conversations: [] },
+          { id: '3', conversations: ['c3'] }
+        ],
+        get_last_message: (args: any) => {
+          processed.push(args.contactId);
+          return { lastMessage: 'Hello' };
+        }
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'contacts', tool_name: 'get_contacts', args: {} },
+          {
+            id: 'messages',
+            tool_name: 'get_last_message',
+            args: { contactId: '{{item.id}}' },
+            loop: '{{contacts}}',
+            filter: '{{item.conversations}}'  // Filters out empty arrays
+          }
+        ],
+        _rateLimiter: createMockRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(true);
+      expect(processed).toEqual(['1', '3']);
+    });
+
+    it('should handle empty loop array gracefully', async () => {
+      const executor = createMockExecutor({
+        get_items: [],
+        process: () => ({ ok: true })
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'items', tool_name: 'get_items', args: {} },
+          {
+            id: 'processed',
+            tool_name: 'process',
+            args: { id: '{{item.id}}' },
+            loop: '{{items}}'
+          }
+        ],
+        _rateLimiter: createMockRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(true);
+      expect(result.result).toEqual([]);
+    });
+
+    it('should fail if loop reference is not an array', async () => {
+      const executor = createMockExecutor({
+        get_single: { id: '1', name: 'Not an array' }
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'single', tool_name: 'get_single', args: {} },
+          {
+            id: 'loop',
+            tool_name: 'process',
+            args: {},
+            loop: '{{single}}'
+          }
+        ],
+        _rateLimiter: createMockRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(false);
+      expect(result.error?.message).toContain('did not resolve to an array');
+    });
+
+    it('should respect concurrency in loop execution', async () => {
+      let currentConcurrent = 0;
+      let maxConcurrent = 0;
+
+      // Custom executor that tracks concurrent executions
+      const customExecutor: ToolExecutor = async (toolName: string) => {
+        if (toolName === 'get_items') {
+          return { success: true, result: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] };
+        }
+        // slow_process
+        currentConcurrent++;
+        maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        currentConcurrent--;
+        return { success: true, result: { ok: true } };
+      };
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'items', tool_name: 'get_items', args: {} },
+          {
+            id: 'processed',
+            tool_name: 'slow_process',
+            args: {},
+            loop: '{{items}}',
+            concurrency: 3
+          }
+        ],
+        _rateLimiter: createMockRateLimiter()
+      }, customExecutor);
+
+      expect(result.success).toBe(true);
+      // Max concurrent should not exceed 3
+      expect(maxConcurrent).toBeLessThanOrEqual(3);
+    });
+
+    it('should chain loop results to next step', async () => {
+      const executor = createMockExecutor({
+        get_ids: ['a', 'b', 'c'],
+        fetch_details: (args: any) => ({ id: args.id, detail: `detail_${args.id}` }),
+        summarize: (args: any) => ({
+          count: args.items.length,
+          ids: args.items.map((i: any) => i.id)
+        })
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'ids', tool_name: 'get_ids', args: {} },
+          {
+            id: 'details',
+            tool_name: 'fetch_details',
+            args: { id: '{{item}}' },
+            loop: '{{ids}}'
+          },
+          {
+            id: 'summary',
+            tool_name: 'summarize',
+            args: { items: '{{details}}' }
+          }
+        ],
+        _rateLimiter: createMockRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(true);
+      expect(result.result).toEqual({
+        count: 3,
+        ids: ['a', 'b', 'c']
+      });
+    });
+
+    it('should handle nested loops (loop result used in another loop)', async () => {
+      const executor = createMockExecutor({
+        get_users: [{ id: 'u1' }, { id: 'u2' }],
+        get_user_posts: (args: any) => [
+          { id: `${args.userId}_p1` },
+          { id: `${args.userId}_p2` }
+        ],
+        count_total: (args: any) => ({ total: args.posts.length })
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'users', tool_name: 'get_users', args: {} },
+          {
+            id: 'posts',
+            tool_name: 'get_user_posts',
+            args: { userId: '{{item.id}}' },
+            loop: '{{users}}'
+          },
+          {
+            id: 'count',
+            tool_name: 'count_total',
+            // posts will be [[p1, p2], [p1, p2]]
+            args: { posts: '{{posts}}' }
+          }
+        ],
+        _rateLimiter: createMockRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(true);
+      // Each user returns 2 posts, so posts array has 2 arrays of 2 items each
+      expect(result.result).toEqual({ total: 2 });
     });
   });
 });

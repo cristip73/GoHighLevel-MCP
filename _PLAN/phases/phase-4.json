@@ -1,40 +1,55 @@
 {
   "phase": "4",
-  "name": "Testing & Documentation",
-  "description": "Comprehensive tests and documentation for all new features",
+  "name": "Testing, Documentation & Loop Support",
+  "description": "Extended phase: Loop support in pipeline, custom file paths, comprehensive tests and documentation",
   "criteria": [
     {
       "id": 1,
-      "criterion": "Unit tests exist for field projector with 90%+ coverage",
+      "criterion": "Pipeline executor supports loop property to iterate over arrays with {{item}} syntax",
       "passes": false
     },
     {
       "id": 2,
-      "criterion": "Unit tests exist for filter expression parser with all operators tested",
+      "criterion": "Pipeline executor supports filter property for conditional step execution",
       "passes": false
     },
     {
       "id": 3,
-      "criterion": "Unit tests exist for variable resolver including array indexing and nested paths",
+      "criterion": "Pipeline loops execute in parallel using batch executor with configurable concurrency",
       "passes": false
     },
     {
       "id": 4,
-      "criterion": "Integration test demonstrates full pipeline execution (search → send_sms → verify) successfully",
+      "criterion": "execute_tool supports custom file_path option for return_mode: file",
       "passes": false
     },
     {
       "id": 5,
-      "criterion": "Integration test demonstrates batch execution with rate limiting and error handling",
+      "criterion": "Unit tests exist for pipeline loop functionality with 90%+ coverage",
       "passes": false
     },
     {
       "id": 6,
-      "criterion": "README or implementation report updated with usage examples for execute_tool options, execute_pipeline, and execute_batch",
+      "criterion": "Unit tests exist for field projector with 90%+ coverage",
       "passes": false
     },
     {
       "id": 7,
+      "criterion": "Integration test demonstrates pipeline with loops (search → loop conversations → loop SMS)",
+      "passes": false
+    },
+    {
+      "id": 8,
+      "criterion": "Integration test demonstrates batch execution with rate limiting and error handling",
+      "passes": false
+    },
+    {
+      "id": 9,
+      "criterion": "Implementation report updated with usage examples for loop support, file_path, and all features",
+      "passes": false
+    },
+    {
+      "id": 10,
       "criterion": "npm run build succeeds with no TypeScript errors",
       "passes": false
     }

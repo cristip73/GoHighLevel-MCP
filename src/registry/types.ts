@@ -141,9 +141,16 @@ export interface ExecuteOptions {
    * Return mode:
    * - 'inline': Return data directly (default)
    * - 'summary': Return {count, sample: [...3 items]}
-   * - 'file': Write to temp file, return {path, count, size}
+   * - 'file': Write to file, return {path, count, size}
    */
   return_mode?: ReturnMode;
+
+  /**
+   * Custom file path for return_mode: 'file'.
+   * If not specified, writes to temp directory.
+   * Auto-adds .json extension if missing.
+   */
+  file_path?: string;
 }
 
 /**

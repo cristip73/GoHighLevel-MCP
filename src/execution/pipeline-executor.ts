@@ -16,7 +16,7 @@
  */
 
 import { resolveVariables, resolveString, PipelineContext, getReferencedSteps } from './variable-resolver.js';
-import { applyProjection, getValueByPath } from './field-projector.js';
+import { applyProjection, applyProjectionWithWarnings, getValueByPath } from './field-projector.js';
 import { RateLimiter, getSharedRateLimiter } from './rate-limiter.js';
 
 /**
@@ -139,6 +139,8 @@ export interface PipelineResult {
   step_results?: Record<string, StepExecutionResult>;
   /** Set to true if pipeline was stopped due to timeout */
   timed_out?: boolean;
+  /** Warnings about projection issues or other non-fatal problems */
+  warnings?: string[];
 }
 
 /**
@@ -459,22 +461,41 @@ export function validatePipeline(request: PipelineRequest): string[] {
 }
 
 /**
+ * Result of applying return template with optional warnings
+ */
+export interface ApplyReturnTemplateResult {
+  result: Record<string, unknown>;
+  warnings?: string[];
+}
+
+/**
  * Apply return template to extract selected fields from step results
  */
 export function applyReturnTemplate(
   context: PipelineContext,
   template: ReturnTemplate
-): Record<string, unknown> {
+): ApplyReturnTemplateResult {
   const result: Record<string, unknown> = {};
+  const allWarnings: string[] = [];
 
   for (const [stepId, fields] of Object.entries(template)) {
     const stepResult = context[stepId];
-    if (stepResult !== undefined) {
-      result[stepId] = applyProjection(stepResult, fields);
+    if (stepResult === undefined) {
+      allWarnings.push(`Step "${stepId}" not found in context`);
+      continue;
+    }
+
+    const projection = applyProjectionWithWarnings(stepResult, fields);
+    result[stepId] = projection.value;
+    if (projection.warnings) {
+      allWarnings.push(...projection.warnings.map(w => `[${stepId}] ${w}`));
     }
   }
 
-  return result;
+  return {
+    result,
+    warnings: allWarnings.length > 0 ? allWarnings : undefined
+  };
 }
 
 /** Default pipeline timeout: 2 minutes */
@@ -621,8 +642,12 @@ export async function executePipeline(
 
   // Apply return template if provided
   let finalResult: unknown;
+  let warnings: string[] | undefined;
+
   if (request.return) {
-    finalResult = applyReturnTemplate(context, request.return);
+    const templateResult = applyReturnTemplate(context, request.return);
+    finalResult = templateResult.result;
+    warnings = templateResult.warnings;
   } else {
     // Return the last step's result by default
     const lastStep = request.steps[request.steps.length - 1];
@@ -634,6 +659,7 @@ export async function executePipeline(
     steps_completed: request.steps.length,
     total_steps: request.steps.length,
     duration_ms: totalDuration,
-    result: finalResult
+    result: finalResult,
+    warnings
   };
 }

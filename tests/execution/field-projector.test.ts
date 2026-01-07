@@ -214,4 +214,168 @@ describe('Field Projector', () => {
       expect(applyProjection(null, ['id'])).toBe(null);
     });
   });
+
+  describe('Array wildcard [*]', () => {
+    it('should extract field from all array elements', () => {
+      const obj = {
+        contacts: [
+          { firstName: 'John', email: 'john@test.com' },
+          { firstName: 'Jane', email: 'jane@test.com' }
+        ]
+      };
+      expect(getValueByPath(obj, 'contacts[*].firstName'))
+        .toEqual(['John', 'Jane']);
+    });
+
+    it('should handle nested paths after [*]', () => {
+      const obj = {
+        items: [
+          { user: { name: 'A' } },
+          { user: { name: 'B' } }
+        ]
+      };
+      expect(getValueByPath(obj, 'items[*].user.name'))
+        .toEqual(['A', 'B']);
+    });
+
+    it('should return undefined for non-array', () => {
+      const obj = { data: 'string' };
+      expect(getValueByPath(obj, 'data[*].field')).toBeUndefined();
+    });
+
+    it('should return entire array when [*] is last segment', () => {
+      const obj = { tags: ['a', 'b', 'c'] };
+      expect(getValueByPath(obj, 'tags[*]')).toEqual(['a', 'b', 'c']);
+    });
+
+    it('should handle multiple fields with [*]', () => {
+      const obj = {
+        users: [
+          { id: 1, name: 'Alice', role: 'admin' },
+          { id: 2, name: 'Bob', role: 'user' },
+          { id: 3, name: 'Charlie', role: 'user' }
+        ]
+      };
+      expect(getValueByPath(obj, 'users[*].id')).toEqual([1, 2, 3]);
+      expect(getValueByPath(obj, 'users[*].name')).toEqual(['Alice', 'Bob', 'Charlie']);
+      expect(getValueByPath(obj, 'users[*].role')).toEqual(['admin', 'user', 'user']);
+    });
+
+    it('should handle undefined values in array', () => {
+      const obj = {
+        items: [
+          { value: 10 },
+          { other: 20 }, // no 'value' field
+          { value: 30 }
+        ]
+      };
+      expect(getValueByPath(obj, 'items[*].value'))
+        .toEqual([10, undefined, 30]);
+    });
+
+    it('should handle deep nesting after [*]', () => {
+      const obj = {
+        orders: [
+          { customer: { address: { city: 'NYC' } } },
+          { customer: { address: { city: 'LA' } } }
+        ]
+      };
+      expect(getValueByPath(obj, 'orders[*].customer.address.city'))
+        .toEqual(['NYC', 'LA']);
+    });
+
+    it('should handle empty array with [*]', () => {
+      const obj = { items: [] };
+      expect(getValueByPath(obj, 'items[*].name')).toEqual([]);
+    });
+
+    it('should work with projectFields for wildcard paths', () => {
+      const obj = {
+        contacts: [
+          { firstName: 'Mihaela', email: 'miha@test.com' },
+          { firstName: 'Adelina', email: 'adelina@test.com' }
+        ],
+        total: 107229
+      };
+      const result = projectFields(obj, ['contacts[*].firstName', 'contacts[*].email', 'total']);
+      expect(result).toEqual({
+        contacts: {
+          firstName: ['Mihaela', 'Adelina'],
+          email: ['miha@test.com', 'adelina@test.com']
+        },
+        total: 107229
+      });
+    });
+  });
+
+  describe('projectArray with [*] prefix', () => {
+    it('should strip [*]. prefix and project fields from each element', () => {
+      const arr = [
+        { firstName: 'John', lastName: 'Doe', email: 'john@test.com' },
+        { firstName: 'Jane', lastName: 'Smith', email: 'jane@test.com' }
+      ];
+      const result = projectArray(arr, ['[*].firstName', '[*].email']);
+      expect(result).toEqual([
+        { firstName: 'John', email: 'john@test.com' },
+        { firstName: 'Jane', email: 'jane@test.com' }
+      ]);
+    });
+
+    it('should handle nested paths after [*].', () => {
+      const arr = [
+        { user: { name: 'Alice', role: 'admin' } },
+        { user: { name: 'Bob', role: 'user' } }
+      ];
+      const result = projectArray(arr, ['[*].user.name']);
+      expect(result).toEqual([
+        { user: { name: 'Alice' } },
+        { user: { name: 'Bob' } }
+      ]);
+    });
+
+    it('should return array as-is when only [*] is specified', () => {
+      const arr = [1, 2, 3];
+      const result = projectArray(arr, ['[*]']);
+      expect(result).toEqual([1, 2, 3]);
+    });
+
+    it('should work without [*] prefix (direct field projection)', () => {
+      const arr = [
+        { id: 1, name: 'A' },
+        { id: 2, name: 'B' }
+      ];
+      const result = projectArray(arr, ['id']);
+      expect(result).toEqual([
+        { id: 1 },
+        { id: 2 }
+      ]);
+    });
+
+    it('should handle mixed fields with and without [*] prefix', () => {
+      const arr = [
+        { firstName: 'John', lastName: 'Doe' },
+        { firstName: 'Jane', lastName: 'Smith' }
+      ];
+      // When any field has [*], all are processed with strip
+      const result = projectArray(arr, ['[*].firstName', 'lastName']);
+      expect(result).toEqual([
+        { firstName: 'John', lastName: 'Doe' },
+        { firstName: 'Jane', lastName: 'Smith' }
+      ]);
+    });
+
+    it('should handle null/undefined items in array', () => {
+      const arr = [
+        { name: 'Valid' },
+        null,
+        { name: 'Also Valid' }
+      ];
+      const result = projectArray(arr, ['[*].name']);
+      expect(result).toEqual([
+        { name: 'Valid' },
+        {},
+        { name: 'Also Valid' }
+      ]);
+    });
+  });
 });

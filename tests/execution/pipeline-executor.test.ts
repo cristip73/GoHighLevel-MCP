@@ -12,6 +12,14 @@ import {
   ToolExecutor
 } from '../../src/execution/pipeline-executor.js';
 import { RateLimiter } from '../../src/execution/rate-limiter.js';
+import { createMockExecutor as createMockExecutorV2 } from '../mocks/ghl-api-client.mock-2.js';
+
+// Wrapper to maintain backwards compatibility with existing test code
+// Old signature: createMockExecutor({ tool_name: result })
+// New v2 signature: createMockExecutor({ results: { tool_name: result } })
+const createMockExecutor = (results: Record<string, unknown>): ToolExecutor => {
+  return createMockExecutorV2({ results });
+};
 
 // Create a mock rate limiter that always grants tokens immediately
 const createMockRateLimiter = (): RateLimiter => {
@@ -23,33 +31,6 @@ const createMockRateLimiter = (): RateLimiter => {
 };
 
 describe('Pipeline Executor', () => {
-  // Mock executor that simulates tool execution
-  const createMockExecutor = (results: Record<string, unknown>): ToolExecutor => {
-    return async (toolName: string, args: Record<string, unknown>) => {
-      if (toolName.startsWith('fail_')) {
-        return {
-          success: false,
-          error: `Tool ${toolName} failed`,
-          validationErrors: ['Missing required param']
-        };
-      }
-
-      const result = results[toolName];
-      if (result === undefined) {
-        return {
-          success: false,
-          error: `Unknown tool: ${toolName}`
-        };
-      }
-
-      // If result is a function, call it with args
-      if (typeof result === 'function') {
-        return { success: true, result: result(args) };
-      }
-
-      return { success: true, result };
-    };
-  };
 
   describe('validatePipeline', () => {
     it('should pass valid pipeline', () => {
@@ -154,10 +135,11 @@ describe('Pipeline Executor', () => {
       };
 
       const result = applyReturnTemplate(context, template);
-      expect(result).toEqual({
+      expect(result.result).toEqual({
         search: { id: '123', name: 'Test' },
         verify: { status: 'ok' }
       });
+      expect(result.warnings).toBeUndefined();
     });
 
     it('should handle missing steps gracefully', () => {
@@ -165,7 +147,8 @@ describe('Pipeline Executor', () => {
       const template = { step1: ['id'], missing: ['x'] };
 
       const result = applyReturnTemplate(context, template);
-      expect(result).toEqual({ step1: { id: '1' } });
+      expect(result.result).toEqual({ step1: { id: '1' } });
+      expect(result.warnings).toContain('Step "missing" not found in context');
     });
   });
 
@@ -818,6 +801,209 @@ describe('Pipeline Executor', () => {
       expect(result.success).toBe(true);
       // Each user returns 2 posts, so posts array has 2 arrays of 2 items each
       expect(result.result).toEqual({ total: 2 });
+    });
+  });
+
+  describe('Real-world projection issues (from production testing)', () => {
+    it('should project array fields with [*] syntax', async () => {
+      const executor = createMockExecutor({
+        search_contacts: {
+          contacts: [
+            { firstName: 'Mihaela', lastName: 'Visan', email: 'miha@test.com', tags: ['vip'] },
+            { firstName: 'Adelina', lastName: 'Petrisor', email: 'adelina@test.com', tags: ['customer'] }
+          ],
+          total: 107229
+        }
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'search', tool_name: 'search_contacts', args: { limit: 2 } }
+        ],
+        return: {
+          search: ['contacts[*].firstName', 'contacts[*].email', 'total']
+        }
+      }, executor);
+
+      expect(result.success).toBe(true);
+      expect(result.result).toEqual({
+        search: {
+          contacts: {
+            firstName: ['Mihaela', 'Adelina'],
+            email: ['miha@test.com', 'adelina@test.com']
+          },
+          total: 107229
+        }
+      });
+      expect(result.warnings).toBeUndefined();
+    });
+
+    it('should warn when projection path not found', async () => {
+      const executor = createMockExecutor({
+        get_data: {
+          data: { id: 1, name: 'Test' }
+        }
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'fetch', tool_name: 'get_data', args: {} }
+        ],
+        return: {
+          fetch: ['data.id', 'data.nonexistent', 'missing.field']
+        }
+      }, executor);
+
+      expect(result.success).toBe(true);
+      expect(result.result).toEqual({
+        fetch: {
+          data: { id: 1 }
+        }
+      });
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings).toContain('[fetch] Field "data.nonexistent" not found in result');
+      expect(result.warnings).toContain('[fetch] Field "missing.field" not found in result');
+    });
+
+    it('should handle loop where tool needs item data', async () => {
+      const executor = createMockExecutor({
+        search_contacts: {
+          contacts: [
+            { id: 'c1', name: 'Contact 1' },
+            { id: 'c2', name: 'Contact 2' }
+          ]
+        },
+        get_contact_conversations: (args: any) => ({
+          messages: [`msg_${args.contactId}`],
+          contactId: args.contactId
+        })
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'contacts', tool_name: 'search_contacts', args: { limit: 2 } },
+          {
+            id: 'conversations',
+            tool_name: 'get_contact_conversations',
+            args: { contactId: '{{item.id}}' },
+            loop: '{{contacts.contacts}}'
+          }
+        ],
+        _rateLimiter: createMockRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(true);
+      expect(result.result).toHaveLength(2);
+      expect(result.result).toEqual([
+        { messages: ['msg_c1'], contactId: 'c1' },
+        { messages: ['msg_c2'], contactId: 'c2' }
+      ]);
+    });
+
+    it('should project nested wildcard paths with deep nesting', async () => {
+      const executor = createMockExecutor({
+        search_opportunities: {
+          opportunities: [
+            { id: 'opp1', contact: { firstName: 'John', email: 'john@test.com' }, monetaryValue: 5000 },
+            { id: 'opp2', contact: { firstName: 'Jane', email: 'jane@test.com' }, monetaryValue: 10000 },
+            { id: 'opp3', contact: { firstName: 'Bob', email: 'bob@test.com' }, monetaryValue: 7500 }
+          ],
+          meta: { total: 57167 }
+        }
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'opps', tool_name: 'search_opportunities', args: { limit: 3 } }
+        ],
+        return: {
+          opps: ['opportunities[*].contact.firstName', 'opportunities[*].monetaryValue', 'meta.total']
+        }
+      }, executor);
+
+      expect(result.success).toBe(true);
+      expect(result.result).toEqual({
+        opps: {
+          opportunities: {
+            contact: {
+              firstName: ['John', 'Jane', 'Bob']
+            },
+            monetaryValue: [5000, 10000, 7500]
+          },
+          meta: { total: 57167 }
+        }
+      });
+    });
+
+    it('should combine loop results with return template projection', async () => {
+      const executor = createMockExecutor({
+        get_pipelines: [
+          { id: 'pipe1', name: 'Sales' },
+          { id: 'pipe2', name: 'Webinars' }
+        ],
+        search_opportunities: (args: any) => ({
+          pipelineId: args.pipelineId,
+          total: args.pipelineId === 'pipe1' ? 1500 : 287
+        })
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'pipelines', tool_name: 'get_pipelines', args: {} },
+          {
+            id: 'opp_counts',
+            tool_name: 'search_opportunities',
+            args: { pipelineId: '{{item.id}}', limit: 1 },
+            loop: '{{pipelines}}'
+          }
+        ],
+        _rateLimiter: createMockRateLimiter()
+      }, executor);
+
+      expect(result.success).toBe(true);
+      // Loop returns array of results
+      expect(result.result).toEqual([
+        { pipelineId: 'pipe1', total: 1500 },
+        { pipelineId: 'pipe2', total: 287 }
+      ]);
+    });
+
+    it('should aggregate pipeline stats using loop', async () => {
+      // This tests the real-world use case from production:
+      // Get totals from multiple pipelines in a single pipeline execution
+      const executor = createMockExecutor({
+        search_opportunities: (args: any) => {
+          const totals: Record<string, number> = {
+            'pipe_main': 1287,
+            'pipe_webinars': 287,
+            'pipe_events': 156
+          };
+          return {
+            opportunities: [],
+            meta: { total: totals[args.pipelineId] || 0 }
+          };
+        }
+      });
+
+      const result = await executePipeline({
+        steps: [
+          { id: 'main', tool_name: 'search_opportunities', args: { pipelineId: 'pipe_main', limit: 1 } },
+          { id: 'webinars', tool_name: 'search_opportunities', args: { pipelineId: 'pipe_webinars', limit: 1 } },
+          { id: 'events', tool_name: 'search_opportunities', args: { pipelineId: 'pipe_events', limit: 1 } }
+        ],
+        return: {
+          main: ['meta.total'],
+          webinars: ['meta.total'],
+          events: ['meta.total']
+        }
+      }, executor);
+
+      expect(result.success).toBe(true);
+      expect(result.result).toEqual({
+        main: { meta: { total: 1287 } },
+        webinars: { meta: { total: 287 } },
+        events: { meta: { total: 156 } }
+      });
     });
   });
 });

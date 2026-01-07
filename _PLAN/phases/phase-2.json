@@ -6,37 +6,37 @@
     {
       "id": 1,
       "criterion": "execute_pipeline tool is exposed and accepts steps array with tool_name, args, and optional id for each step",
-      "passes": false
+      "passes": true
     },
     {
       "id": 2,
       "criterion": "Steps execute sequentially server-side without intermediate results going to LLM context",
-      "passes": false
+      "passes": true
     },
     {
       "id": 3,
       "criterion": "Variable references ({{step_id.field}}) resolve correctly between steps, including array indexing ({{step_id[0].field}})",
-      "passes": false
+      "passes": true
     },
     {
       "id": 4,
       "criterion": "Pipeline supports 'delay_ms' option per step to wait before execution",
-      "passes": false
+      "passes": true
     },
     {
       "id": 5,
       "criterion": "Pipeline accepts 'return' template specifying which fields from which steps to include in final response",
-      "passes": false
+      "passes": true
     },
     {
       "id": 6,
       "criterion": "Failed step stops pipeline and returns error with step_id, error message, and partial results",
-      "passes": false
+      "passes": true
     },
     {
       "id": 7,
       "criterion": "Complex workflow (search → filter → send_sms → verify) executes in single tool call returning only summary",
-      "passes": false
+      "passes": true
     }
   ]
 }

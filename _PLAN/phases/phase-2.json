@@ -1,0 +1,42 @@
+{
+  "phase": "2",
+  "name": "Pipeline Execution",
+  "description": "Execute multi-step workflows server-side with variable passing between steps, returning only final results",
+  "criteria": [
+    {
+      "id": 1,
+      "criterion": "execute_pipeline tool is exposed and accepts steps array with tool_name, args, and optional id for each step",
+      "passes": false
+    },
+    {
+      "id": 2,
+      "criterion": "Steps execute sequentially server-side without intermediate results going to LLM context",
+      "passes": false
+    },
+    {
+      "id": 3,
+      "criterion": "Variable references ({{step_id.field}}) resolve correctly between steps, including array indexing ({{step_id[0].field}})",
+      "passes": false
+    },
+    {
+      "id": 4,
+      "criterion": "Pipeline supports 'delay_ms' option per step to wait before execution",
+      "passes": false
+    },
+    {
+      "id": 5,
+      "criterion": "Pipeline accepts 'return' template specifying which fields from which steps to include in final response",
+      "passes": false
+    },
+    {
+      "id": 6,
+      "criterion": "Failed step stops pipeline and returns error with step_id, error message, and partial results",
+      "passes": false
+    },
+    {
+      "id": 7,
+      "criterion": "Complex workflow (search → filter → send_sms → verify) executes in single tool call returning only summary",
+      "passes": false
+    }
+  ]
+}

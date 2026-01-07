@@ -1,0 +1,42 @@
+{
+  "phase": "1",
+  "name": "Enhanced Execute Tool",
+  "description": "Add options to execute_tool for field projection, filtering, limiting, and return modes to reduce context pollution",
+  "criteria": [
+    {
+      "id": 1,
+      "criterion": "execute_tool accepts an optional 'options' parameter with select_fields, limit, filter, return_mode",
+      "passes": false
+    },
+    {
+      "id": 2,
+      "criterion": "select_fields option returns only specified fields from results (supports dot notation for nested fields)",
+      "passes": false
+    },
+    {
+      "id": 3,
+      "criterion": "limit option restricts array results to specified count server-side",
+      "passes": false
+    },
+    {
+      "id": 4,
+      "criterion": "return_mode 'summary' returns {count, sample: [...3 items]} instead of full data",
+      "passes": false
+    },
+    {
+      "id": 5,
+      "criterion": "return_mode 'file' writes results to temp file and returns {path, count, size}",
+      "passes": false
+    },
+    {
+      "id": 6,
+      "criterion": "filter option applies server-side filtering with operators: =, !=, >, <, CONTAINS, STARTS_WITH, IS_NULL, IS_NOT_NULL",
+      "passes": false
+    },
+    {
+      "id": 7,
+      "criterion": "All existing execute_tool calls continue to work without options (backward compatible)",
+      "passes": false
+    }
+  ]
+}

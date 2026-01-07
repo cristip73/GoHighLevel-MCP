@@ -1,0 +1,42 @@
+{
+  "phase": "4",
+  "name": "Testing & Documentation",
+  "description": "Comprehensive tests and documentation for all new features",
+  "criteria": [
+    {
+      "id": 1,
+      "criterion": "Unit tests exist for field projector with 90%+ coverage",
+      "passes": false
+    },
+    {
+      "id": 2,
+      "criterion": "Unit tests exist for filter expression parser with all operators tested",
+      "passes": false
+    },
+    {
+      "id": 3,
+      "criterion": "Unit tests exist for variable resolver including array indexing and nested paths",
+      "passes": false
+    },
+    {
+      "id": 4,
+      "criterion": "Integration test demonstrates full pipeline execution (search → send_sms → verify) successfully",
+      "passes": false
+    },
+    {
+      "id": 5,
+      "criterion": "Integration test demonstrates batch execution with rate limiting and error handling",
+      "passes": false
+    },
+    {
+      "id": 6,
+      "criterion": "README or implementation report updated with usage examples for execute_tool options, execute_pipeline, and execute_batch",
+      "passes": false
+    },
+    {
+      "id": 7,
+      "criterion": "npm run build succeeds with no TypeScript errors",
+      "passes": false
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "phase": "4",
+  "name": "Testing, Documentation & Loop Support",
+  "description": "Extended phase: Loop support in pipeline, custom file paths, comprehensive tests and documentation",
+  "criteria": [
+    {
+      "id": 1,
+      "criterion": "Pipeline executor supports loop property to iterate over arrays with {{item}} syntax",
+      "passes": false
+    },
+    {
+      "id": 2,
+      "criterion": "Pipeline executor supports filter property for conditional step execution",
+      "passes": false
+    },
+    {
+      "id": 3,
+      "criterion": "Pipeline loops execute in parallel using batch executor with configurable concurrency",
+      "passes": false
+    },
+    {
+      "id": 4,
+      "criterion": "execute_tool supports custom file_path option for return_mode: file",
+      "passes": false
+    },
+    {
+      "id": 5,
+      "criterion": "Unit tests exist for pipeline loop functionality with 90%+ coverage",
+      "passes": false
+    },
+    {
+      "id": 6,
+      "criterion": "Unit tests exist for field projector with 90%+ coverage",
+      "passes": false
+    },
+    {
+      "id": 7,
+      "criterion": "Integration test demonstrates pipeline with loops (search → loop conversations → loop SMS)",
+      "passes": false
+    },
+    {
+      "id": 8,
+      "criterion": "Integration test demonstrates batch execution with rate limiting and error handling",
+      "passes": false
+    },
+    {
+      "id": 9,
+      "criterion": "Implementation report updated with usage examples for loop support, file_path, and all features",
+      "passes": false
+    },
+    {
+      "id": 10,
+      "criterion": "npm run build succeeds with no TypeScript errors",
+      "passes": false
+    }
+  ]
+}

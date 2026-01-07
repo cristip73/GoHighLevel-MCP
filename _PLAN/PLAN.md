@@ -1,248 +1,253 @@
-# GHL MCP Server - Development Plan
+# GHL MCP Server - Improvement Proposals Implementation Plan
 
-## Vision
-
-Transform the GoHighLevel MCP Server from a simple tool catalog to a **context-efficient execution engine** that supports complex multi-step workflows without polluting LLM context with intermediate results.
-
-## Current State (Completed)
-
-- ✅ Progressive disclosure implemented (254 → 5 tools exposed)
-- ✅ Meta-tools: `search_tools`, `describe_tools`, `execute_tool`, `list_domains`
-- ✅ Tool registry with adapter pattern
-- ✅ ~96% token reduction achieved
-
-## Gap Analysis
-
-| Feature | Status | Impact |
-|---------|--------|--------|
-| Tool discovery | ✅ Done | High |
-| On-demand schemas | ✅ Done | High |
-| Basic execution | ✅ Done | High |
-| **Result projection** | ❌ Missing | Critical |
-| **Server-side filtering** | ❌ Missing | Critical |
-| **Multi-step pipelines** | ❌ Missing | High |
-| **Batch operations** | ❌ Missing | Medium |
+> **PRD**: `_DOCS/_REPORTS/ghl-mcp-improvement-proposals.md`
+> **Data**: 7 Ianuarie 2026
+> **Branch**: `feat/improvement-proposals`
 
 ---
 
-## Phase Overview
+## Context
 
-| Phase | Name | Focus | Dependencies |
-|-------|------|-------|--------------|
-| 1 | Enhanced Execute | Add options to `execute_tool` | None |
-| 2 | Pipeline Execution | Multi-step server-side workflows | Phase 1 |
-| 3 | Batch Operations | Bulk processing with throttling | Phase 1 |
-| 4 | Testing & Docs | Integration tests, documentation | Phases 1-3 |
+Plan de implementare pentru îmbunătățirile identificate în sesiunea de research pe baza de date GHL Kilostop (107K contacte, 57K oportunități, 68K conversații).
+
+### Constatări din Research API GHL
+
+| Problemă din PRD | Suport GHL API | Concluzie |
+|------------------|----------------|-----------|
+| Calendar events fără filtru obligatoriu | ❌ API necesită userId/calendarId/groupId | Wrapper care listează calendare și agregă |
+| Statistics/Aggregation | ❌ Nu există endpoints native | Calculare client-side în MCP server |
+| Location-level notes | ❌ Doar per-contact (`/contacts/:id/notes`) | Pipeline-based sau iterare |
+| Dashboard overview | ❌ Nu există endpoint | Composite tool cu multiple API calls |
+| Pipeline loop aggregation | N/A (intern MCP) | Extindere pipeline executor |
 
 ---
 
-## Phase 1: Enhanced Execute Tool
+## Faze de Implementare
 
-**Goal:** Reduce context pollution by adding projection, filtering, and return modes to `execute_tool`.
+| Fază | Nume | Prioritate | Dependențe |
+|------|------|------------|------------|
+| 1 | Pipeline Aggregation | P1 | - |
+| 2 | Stats Tools | P1 | - |
+| 3 | Calendar Enhancement | P1-P2 | - |
+| 4 | Location Overview | P3 | Faza 2 |
+| 5 | Notes Aggregation | P3 | Faza 1 |
+
+**Fazele 1, 2, 3 pot rula în paralel.**
+
+---
+
+## Faza 1: Pipeline Aggregation Enhancement
+
+**Goal**: Adaugă suport pentru agregări în `execute_pipeline` loop steps pentru a reduce output-ul și a calcula statistici server-side.
 
 ### Tasks
 
-1. **Extend `execute_tool` schema**
-   - Add `options` parameter with `select_fields`, `limit`, `filter`, `return_mode`
-   - Update meta-tools.ts
+1. Extinde interfața `PipelineStep` cu parametru `aggregate`
+2. Implementează operațiile de agregare:
+   - `count` - număr elemente
+   - `sum` - sumă pe un field numeric
+   - `avg` - medie pe un field numeric
+   - `min` / `max` - valori extreme
+   - `countBy` - count grupat pe valori distincte
+   - `unique` - colectare valori unice
+3. Implementează `groupBy` pentru agregări pe categorii
+4. Update variable-resolver pentru a recunoaște aggregate results
+5. Adaugă teste pentru toate operațiile
 
-2. **Implement field projection**
-   - Extract only requested fields from results
-   - Handle nested objects
-   - Support dot notation (e.g., `contact.tags`)
+### Fișiere Afectate
 
-3. **Implement result limiting**
-   - Server-side limit on array results
-   - Pagination cursor support
-
-4. **Implement return modes**
-   - `inline`: Return data directly (default, current behavior)
-   - `summary`: Return count + sample (3 items max)
-   - `file`: Write to temp file, return path
-
-5. **Implement server-side filtering**
-   - Simple expression parser (`field OPERATOR value`)
-   - Supported operators: `=`, `!=`, `>`, `<`, `CONTAINS`, `STARTS_WITH`, `IS_NULL`, `IS_NOT_NULL`
+- `src/execution/pipeline-executor.ts`
+- `src/execution/aggregator.ts` (NOU)
+- `src/registry/types.ts`
+- `tests/pipeline-aggregation.test.ts` (NOU)
 
 ### Acceptance Criteria
-- See `phases/phase-1.json`
+
+Vezi `phases/phase-1.json`
 
 ---
 
-## Phase 2: Pipeline Execution
+## Faza 2: Stats Tools
 
-**Goal:** Execute multi-step workflows server-side, returning only final results.
+**Goal**: Creează tools noi pentru statistici calculate server-side folosind API calls existente + agregare.
 
 ### Tasks
 
-1. **Design pipeline schema**
-   - Step definitions with tool name and args
-   - Variable references between steps (`{{step_id.field}}`)
-   - Conditional execution
-   - Delays between steps
+1. Creează `src/tools/stats-tools.ts` cu clasă `StatsTools`
+2. Implementează `get_conversation_stats`:
+   - Folosește search_conversations iterativ
+   - Returnează: total, byType, byDirection, unreadCount
+3. Implementează `get_pipeline_stage_counts`:
+   - Folosește get_opportunities cu paginare
+   - Returnează: total, stages[] cu count și percentage
+4. Implementează `get_appointment_stats`:
+   - Iterează calendare și agregă evenimente
+   - Returnează: total, byStatus, byCalendar, byMonth
+5. Implementează `get_contact_stats`:
+   - Folosește search_contacts cu filtre
+   - Returnează: total, withEmail, withPhone, bySource
+6. Înregistrează în tool registry
+7. Adaugă documentație în tool descriptions
 
-2. **Create `execute_pipeline` tool**
-   - Add to meta-tools.ts
-   - Define input schema with steps array
-   - Define return template
+### Fișiere Afectate
 
-3. **Implement pipeline executor**
-   - Sequential step execution
-   - Variable interpolation
-   - Error handling and rollback strategy
-   - Timeout management
-
-4. **Implement step result chaining**
-   - Store step results in context
-   - Resolve variable references
-   - Support array indexing (`{{contacts[0].id}}`)
+- `src/tools/stats-tools.ts` (NOU)
+- `src/registry/tool-registry.ts`
+- `tests/stats-tools.test.ts` (NOU)
 
 ### Acceptance Criteria
-- See `phases/phase-2.json`
+
+Vezi `phases/phase-2.json`
 
 ---
 
-## Phase 3: Batch Operations
+## Faza 3: Calendar Enhancement
 
-**Goal:** Process multiple items efficiently with rate limiting.
+**Goal**: Îmbunătățește calendar tools pentru operații la nivel de locație fără filtru obligatoriu.
 
 ### Tasks
 
-1. **Create `execute_batch` tool**
-   - Single tool executed on multiple items
-   - Configurable concurrency
-   - Rate limiting (respect GHL API limits)
+1. Adaugă tool `get_all_calendar_events`:
+   - Listează toate calendarele din locație
+   - Iterează și colectează evenimente din fiecare
+   - Suportă date range (startTime, endTime)
+   - Agregă rezultatele într-un singur response
+   - Rate limiting pentru a nu depăși 100 req/min
+2. Adaugă opțiune `compact: true` pentru `get_calendars`:
+   - Returnează doar: id, name, calendarType, isActive
+   - Reduce output de la ~1.2MB la ~10KB
+3. Adaugă paginare la `get_calendars` (limit/offset)
+4. Update documentație tool descriptions
 
-2. **Implement batch executor**
-   - Parallel execution with limit
-   - Retry logic for failed items
-   - Progress tracking
+### Fișiere Afectate
 
-3. **Result aggregation**
-   - Summary mode: counts and errors only
-   - Detail mode: all results (with projection)
-   - Error collection
+- `src/tools/calendar-tools.ts`
+- `tests/calendar-tools.test.ts`
 
 ### Acceptance Criteria
-- See `phases/phase-3.json`
+
+Vezi `phases/phase-3.json`
 
 ---
 
-## Phase 4: Testing, Documentation & Loop Support (Extended)
+## Faza 4: Location Overview Dashboard
 
-**Goal:** Add loop support to pipeline, custom file paths, ensure reliability and provide clear usage guides.
+**Goal**: Un singur tool care returnează statistici esențiale pentru dashboard rapid.
 
 ### Tasks
 
-1. **Loop Support in Pipeline** (NEW)
-   - Add `loop` property to iterate over arrays
-   - Add `filter` property for conditional execution
-   - Implement parallel execution within loops using batch executor
-   - Support `{{item}}` syntax for accessing current loop item
+1. Adaugă `get_location_overview` în StatsTools:
+   - Parametru `include`: array de secțiuni dorite
+   - Secțiuni: contacts, opportunities, conversations, calendars, workflows
+2. Implementează agregare paralelă pentru performance:
+   - Folosește Promise.all pentru queries independente
+   - Timeout per secțiune pentru resilience
+3. Returnează structură:
+   ```json
+   {
+     "location": { "id", "name", "timezone" },
+     "contacts": { "total", "withEmail", "withPhone", "addedLast30Days" },
+     "opportunities": { "total", "byStatus", "byPipeline" },
+     "conversations": { "total", "unread", "byType" },
+     "calendars": { "total", "appointmentsToday", "appointmentsThisWeek" }
+   }
+   ```
+4. Adaugă caching opțional (TTL configurabil)
 
-2. **Custom File Path for Return Mode** (NEW)
-   - Allow `file_path` option in `return_mode: "file"`
-   - Support custom output locations instead of temp files
+### Fișiere Afectate
 
-3. **Unit tests**
-   - Pipeline loop functionality
-   - Field projection (90%+ coverage)
-   - Filter expression parser
-   - Variable interpolation
-   - Batch executor
-
-4. **Integration tests**
-   - Pipeline with loops (search → loop conversations → loop SMS)
-   - Batch execution with rate limiting and error handling
-
-5. **Documentation**
-   - Update implementation report with loop support examples
-   - Usage examples for all features
-   - Migration guide from basic execute_tool
+- `src/tools/stats-tools.ts`
+- `tests/stats-tools.test.ts`
 
 ### Acceptance Criteria
-- See `phases/phase-4.json`
+
+Vezi `phases/phase-4.json`
 
 ---
 
-## Addendum: Phase 4 Extension (2026-01-07)
+## Faza 5: Notes Location Search
 
-Based on real-world testing documented in `_DOCS/_RESOURCES/GHL_MCP_TESTING_REPORT.md`, Phase 4 was extended to address a critical limitation: **pipeline executor lacked loop support**.
+**Goal**: Documentație și tool opțional pentru agregare notes la nivel de locație.
 
-### Problem Identified
+### Tasks
 
-The original pipeline required manual specification of each array index:
-```javascript
-// BEFORE: Manual indexing (inflexible, verbose)
-steps: [
-  { id: "conv0", args: { contactId: "{{search.contacts[0].id}}" } },
-  { id: "conv1", args: { contactId: "{{search.contacts[1].id}}" } },
-  { id: "conv2", args: { contactId: "{{search.contacts[2].id}}" } },
-  // ... must know count in advance!
-]
-```
+1. Documentează limitarea API GHL (notes doar per-contact)
+2. Creează recipe în documentație pentru pipeline-based notes aggregation
+3. Opțional: Adaugă helper `search_recent_notes`:
+   - Primește contactIds sau folosește search_contacts recent
+   - Iterează și colectează notes
+   - Warning în response despre limitări de performanță
+4. Adaugă test pentru workflow-ul documentat
 
-### Solution Implemented
+### Fișiere Afectate
 
-Loop support with `{{item}}` syntax:
-```javascript
-// AFTER: Dynamic iteration (flexible, concise)
-steps: [
-  {
-    id: "conversations",
-    tool_name: "search_conversations",
-    loop: "{{search.contacts}}",
-    args: { contactId: "{{item.id}}" }
-  }
-]
-```
+- `docs/recipes/location-notes-aggregation.md` (NOU)
+- `src/tools/contact-tools.ts` (opțional)
 
-### Additional Improvements
+### Acceptance Criteria
 
-1. **Filter support**: Skip items conditionally with `filter: "{{item.conversations.length > 0}}"`
-2. **Parallel loops**: Configurable `concurrency` for loop execution
-3. **Custom file paths**: `file_path` option for `return_mode: "file"`
-
-*Addendum created: 2026-01-07*
+Vezi `phases/phase-5.json`
 
 ---
 
-## Technical Notes
-
-### File Changes Expected
+## Diagrama Dependențelor
 
 ```
-src/
-├── registry/
-│   └── tool-registry.ts     # Add projection, filtering
-├── tools/
-│   └── meta-tools.ts        # Add execute_pipeline, execute_batch
-├── execution/               # NEW
-│   ├── field-projector.ts   # Field selection logic
-│   ├── result-filter.ts     # Filter expression parser
-│   ├── pipeline-executor.ts # Multi-step execution
-│   ├── batch-executor.ts    # Batch processing
-│   └── variable-resolver.ts # Template variable resolution
-└── server.ts                # Minor updates
+┌─────────────────────────────────────────────────────────┐
+│                    PARALEL (Independente)               │
+├─────────────────────────────────────────────────────────┤
+│  Faza 1                Faza 2              Faza 3       │
+│  Pipeline Aggregation  Stats Tools         Calendar    │
+│         │                   │                          │
+└─────────│───────────────────│──────────────────────────┘
+          │                   │
+          │                   ▼
+          │           ┌──────────────┐
+          │           │   Faza 4     │
+          │           │   Overview   │
+          │           └──────────────┘
+          │
+          ▼
+   ┌──────────────┐
+   │   Faza 5     │
+   │   Notes      │
+   └──────────────┘
 ```
 
-### GHL API Rate Limits
+---
 
-- Standard: 100 requests/minute
-- Batch operations should respect this
-- Implement exponential backoff
+## Out of Scope (Limitări GHL API)
+
+Următoarele NU sunt posibile datorită API GHL:
+
+1. **Calendar events globale** - API necesită userId/calendarId/groupId (workaround: iterare)
+2. **Custom field value distribution** - necesită citirea tuturor contactelor
+3. **Native statistics endpoints** - nu există, trebuie calculate
+4. **Notes la nivel de locație** - doar per-contact endpoint
 
 ---
 
 ## Success Metrics
 
-| Metric | Before | After Phase 2 | Target |
-|--------|--------|---------------|--------|
-| Context pollution (complex workflow) | ~50KB | ~2KB | <5KB |
-| Tool calls for 3-step workflow | 6-9 | 1 | 1 |
-| Intermediate results in context | Yes | No | No |
+| Fază | Criteriu Principal |
+|------|-------------------|
+| 1 | `aggregate: {type: "sum"}` în pipeline returnează număr, nu array |
+| 2 | `get_conversation_stats` returnează breakdown în <5s |
+| 3 | `get_all_calendar_events` funcționează fără userId/calendarId |
+| 4 | `get_location_overview` returnează dashboard în <10s |
+| 5 | Documentație clară pentru notes aggregation |
 
 ---
 
-*Plan created: 2026-01-07*
-*Branch: feat/grouped-tools*
+## Riscuri și Mitigări
+
+| Risc | Impact | Mitigare |
+|------|--------|----------|
+| Rate limiting GHL (100 req/min) | High | Concurrency control în loops |
+| Output prea mare pentru stats | Medium | return_mode: summary |
+| Performance pentru locații mari | High | Limits, pagination, caching |
+| Timeout pe location overview | Medium | Per-section timeout + partial results |
+
+---
+
+*Plan creat: 7 Ianuarie 2026*

@@ -1,43 +1,47 @@
 {
   "phase": "1",
-  "name": "Enhanced Execute Tool",
-  "description": "Add options to execute_tool for field projection, filtering, limiting, and return modes to reduce context pollution",
+  "name": "Pipeline Aggregation Enhancement",
+  "description": "Adaugă suport pentru agregări în execute_pipeline loop steps pentru a calcula statistici server-side",
   "criteria": [
     {
       "id": 1,
-      "criterion": "execute_tool accepts an optional 'options' parameter with select_fields, limit, filter, return_mode",
-      "passes": true
+      "criterion": "PipelineStep interface extins cu proprietatea 'aggregate' opțională",
+      "passes": false
     },
     {
       "id": 2,
-      "criterion": "select_fields option returns only specified fields from results (supports dot notation for nested fields)",
-      "passes": true
+      "criterion": "Agregarea 'count' returnează numărul de elemente din loop",
+      "passes": false
     },
     {
       "id": 3,
-      "criterion": "limit option restricts array results to specified count server-side",
-      "passes": true
+      "criterion": "Agregarea 'sum' calculează suma unui field numeric specificat",
+      "passes": false
     },
     {
       "id": 4,
-      "criterion": "return_mode 'summary' returns {count, sample: [...3 items]} instead of full data",
-      "passes": true
+      "criterion": "Agregarea 'countBy' returnează obiect cu count per valoare distinctă a field-ului",
+      "passes": false
     },
     {
       "id": 5,
-      "criterion": "return_mode 'file' writes results to temp file and returns {path, count, size}",
-      "passes": true
+      "criterion": "Agregarea 'unique' colectează valorile unice ale unui field într-un array",
+      "passes": false
     },
     {
       "id": 6,
-      "criterion": "filter option applies server-side filtering with operators: =, !=, >, <, CONTAINS, STARTS_WITH, IS_NULL, IS_NOT_NULL",
-      "passes": true
+      "criterion": "Parametrul 'groupBy' permite agregări grupate pe o proprietate",
+      "passes": false
     },
     {
       "id": 7,
-      "criterion": "All existing execute_tool calls continue to work without options (backward compatible)",
-      "passes": true
+      "criterion": "Teste unitare pentru toate tipurile de agregare cu coverage >90%",
+      "passes": false
+    },
+    {
+      "id": 8,
+      "criterion": "npm run build reușește fără erori TypeScript",
+      "passes": false
     }
-  ],
-  "completedAt": "2026-01-07"
+  ]
 }

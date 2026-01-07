@@ -1,0 +1,37 @@
+{
+  "phase": "3",
+  "name": "Batch Operations",
+  "description": "Process multiple items with a single tool call, respecting rate limits and aggregating results",
+  "criteria": [
+    {
+      "id": 1,
+      "criterion": "execute_batch tool is exposed and accepts tool_name, items array, and options",
+      "passes": true
+    },
+    {
+      "id": 2,
+      "criterion": "Batch executes tool for each item with configurable concurrency (default: 5 parallel)",
+      "passes": true
+    },
+    {
+      "id": 3,
+      "criterion": "Rate limiting respects GHL API limits (100 req/min) with automatic throttling",
+      "passes": true
+    },
+    {
+      "id": 4,
+      "criterion": "Failed items are collected separately with error details, successful items continue processing",
+      "passes": true
+    },
+    {
+      "id": 5,
+      "criterion": "Result aggregation supports 'summary' mode (counts only) and 'detail' mode (all results with optional projection)",
+      "passes": true
+    },
+    {
+      "id": 6,
+      "criterion": "Batch of 50 items executes without timing out (respects rate limits, uses streaming if needed)",
+      "passes": true
+    }
+  ]
+}

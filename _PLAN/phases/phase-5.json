@@ -1,0 +1,37 @@
+{
+  "phase": "5",
+  "name": "Notes Location Search",
+  "description": "Documentație și tool opțional pentru agregare notes la nivel de locație (cu limitări cunoscute)",
+  "criteria": [
+    {
+      "id": 1,
+      "criterion": "Documentație în docs/recipes/ explică limitarea API GHL pentru notes",
+      "passes": false
+    },
+    {
+      "id": 2,
+      "criterion": "Recipe documentează pipeline-based workflow pentru notes aggregation",
+      "passes": false
+    },
+    {
+      "id": 3,
+      "criterion": "Recipe include exemplu de execute_pipeline funcțional pentru notes",
+      "passes": false
+    },
+    {
+      "id": 4,
+      "criterion": "Warning clar în documentație despre performanță pentru locații mari",
+      "passes": false
+    },
+    {
+      "id": 5,
+      "criterion": "Opțional: Tool 'search_recent_notes' implementat cu warning în response",
+      "passes": false
+    },
+    {
+      "id": 6,
+      "criterion": "npm run build reușește fără erori TypeScript",
+      "passes": false
+    }
+  ]
+}

@@ -1,56 +1,46 @@
 {
   "phase": "4",
-  "name": "Testing, Documentation & Loop Support",
-  "description": "Extended phase: Loop support in pipeline, custom file paths, comprehensive tests and documentation",
+  "name": "Location Overview Dashboard",
+  "description": "Tool unic pentru statistici esențiale dashboard: contacts, opportunities, conversations, calendars",
   "criteria": [
     {
       "id": 1,
-      "criterion": "Pipeline executor supports loop property to iterate over arrays with {{item}} syntax",
+      "criterion": "Tool 'get_location_overview' există și acceptă parametru 'include' (array de secțiuni)",
       "passes": false
     },
     {
       "id": 2,
-      "criterion": "Pipeline executor supports filter property for conditional step execution",
+      "criterion": "Secțiunea 'contacts' returnează {total, withEmail, withPhone, addedLast30Days}",
       "passes": false
     },
     {
       "id": 3,
-      "criterion": "Pipeline loops execute in parallel using batch executor with configurable concurrency",
+      "criterion": "Secțiunea 'opportunities' returnează {total, byStatus, byPipeline}",
       "passes": false
     },
     {
       "id": 4,
-      "criterion": "execute_tool supports custom file_path option for return_mode: file",
+      "criterion": "Secțiunea 'conversations' returnează {total, unread, byType}",
       "passes": false
     },
     {
       "id": 5,
-      "criterion": "Unit tests exist for pipeline loop functionality with 90%+ coverage",
+      "criterion": "Secțiunea 'calendars' returnează {total, appointmentsToday, appointmentsThisWeek}",
       "passes": false
     },
     {
       "id": 6,
-      "criterion": "Unit tests exist for field projector with 90%+ coverage",
+      "criterion": "Queries pentru secțiuni independente rulează în paralel (Promise.all)",
       "passes": false
     },
     {
       "id": 7,
-      "criterion": "Integration test demonstrates pipeline with loops (search → loop conversations → loop SMS)",
+      "criterion": "Response time pentru location overview complet este sub 10 secunde",
       "passes": false
     },
     {
       "id": 8,
-      "criterion": "Integration test demonstrates batch execution with rate limiting and error handling",
-      "passes": false
-    },
-    {
-      "id": 9,
-      "criterion": "Implementation report updated with usage examples for loop support, file_path, and all features",
-      "passes": false
-    },
-    {
-      "id": 10,
-      "criterion": "npm run build succeeds with no TypeScript errors",
+      "criterion": "npm run build reușește fără erori TypeScript",
       "passes": false
     }
   ]

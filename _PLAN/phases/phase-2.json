@@ -1,42 +1,47 @@
 {
   "phase": "2",
-  "name": "Pipeline Execution",
-  "description": "Execute multi-step workflows server-side with variable passing between steps, returning only final results",
+  "name": "Stats Tools",
+  "description": "Tools noi pentru statistici calculate server-side: conversations, pipeline stages, appointments, contacts",
   "criteria": [
     {
       "id": 1,
-      "criterion": "execute_pipeline tool is exposed and accepts steps array with tool_name, args, and optional id for each step",
-      "passes": true
+      "criterion": "Fișierul src/tools/stats-tools.ts există cu clasa StatsTools",
+      "passes": false
     },
     {
       "id": 2,
-      "criterion": "Steps execute sequentially server-side without intermediate results going to LLM context",
-      "passes": true
+      "criterion": "Tool 'get_conversation_stats' returnează {total, byType, byDirection, unreadCount}",
+      "passes": false
     },
     {
       "id": 3,
-      "criterion": "Variable references ({{step_id.field}}) resolve correctly between steps, including array indexing ({{step_id[0].field}})",
-      "passes": true
+      "criterion": "Tool 'get_pipeline_stage_counts' returnează {total, stages: [{id, name, count, percentage}]}",
+      "passes": false
     },
     {
       "id": 4,
-      "criterion": "Pipeline supports 'delay_ms' option per step to wait before execution",
-      "passes": true
+      "criterion": "Tool 'get_appointment_stats' returnează {total, byStatus, byCalendar}",
+      "passes": false
     },
     {
       "id": 5,
-      "criterion": "Pipeline accepts 'return' template specifying which fields from which steps to include in final response",
-      "passes": true
+      "criterion": "Tool 'get_contact_stats' returnează {total, withEmail, withPhone, bySource}",
+      "passes": false
     },
     {
       "id": 6,
-      "criterion": "Failed step stops pipeline and returns error with step_id, error message, and partial results",
-      "passes": true
+      "criterion": "Toate tools sunt înregistrate în ToolRegistry și apar în search_tools",
+      "passes": false
     },
     {
       "id": 7,
-      "criterion": "Complex workflow (search → filter → send_sms → verify) executes in single tool call returning only summary",
-      "passes": true
+      "criterion": "Teste unitare pentru fiecare stats tool cu mock-uri API",
+      "passes": false
+    },
+    {
+      "id": 8,
+      "criterion": "npm run build reușește fără erori TypeScript",
+      "passes": false
     }
   ]
 }

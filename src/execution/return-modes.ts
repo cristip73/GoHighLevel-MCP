@@ -39,6 +39,15 @@ export interface FileResult {
  * @returns Summary with count and sample
  */
 export function applySummaryMode(result: unknown): SummaryResult {
+  // Handle null/undefined as empty result (e.g., from filter that matched nothing)
+  if (result === null || result === undefined) {
+    return {
+      count: 0,
+      sample: [],
+      truncated: false
+    };
+  }
+
   if (Array.isArray(result)) {
     return {
       count: result.length,

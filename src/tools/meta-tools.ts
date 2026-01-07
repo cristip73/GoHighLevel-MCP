@@ -282,12 +282,13 @@ export class MetaTools {
       transformations.push(`filtered by "${options.filter}"`);
     }
 
-    // 2. Apply limit (only for arrays)
+    // 2. Apply limit (only for arrays, must be non-negative integer)
     if (options.limit !== undefined && Array.isArray(result)) {
+      const limit = Math.max(0, Math.floor(options.limit));
       const originalLength = result.length;
-      result = result.slice(0, options.limit);
-      if (originalLength > options.limit) {
-        transformations.push(`limited to ${options.limit} of ${originalLength}`);
+      result = result.slice(0, limit);
+      if (originalLength > limit) {
+        transformations.push(`limited to ${limit} of ${originalLength}`);
       }
     }
 

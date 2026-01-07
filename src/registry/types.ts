@@ -98,6 +98,55 @@ export interface SearchOptions {
 }
 
 /**
+ * Return modes for execute_tool
+ */
+export type ReturnMode = 'inline' | 'summary' | 'file';
+
+/**
+ * Filter operators supported by execute_tool
+ */
+export type FilterOperator =
+  | '='
+  | '!='
+  | '>'
+  | '<'
+  | 'CONTAINS'
+  | 'STARTS_WITH'
+  | 'IS_NULL'
+  | 'IS_NOT_NULL';
+
+/**
+ * Options for execute_tool to reduce context pollution
+ */
+export interface ExecuteOptions {
+  /**
+   * Select specific fields from results (supports dot notation for nested fields)
+   * Example: ['id', 'name', 'contact.email', 'tags[0]']
+   */
+  select_fields?: string[];
+
+  /**
+   * Limit array results to specified count (server-side)
+   */
+  limit?: number;
+
+  /**
+   * Filter expression: "field OPERATOR value"
+   * Operators: =, !=, >, <, CONTAINS, STARTS_WITH, IS_NULL, IS_NOT_NULL
+   * Example: "status = active", "email CONTAINS @gmail.com"
+   */
+  filter?: string;
+
+  /**
+   * Return mode:
+   * - 'inline': Return data directly (default)
+   * - 'summary': Return {count, sample: [...3 items]}
+   * - 'file': Write to temp file, return {path, count, size}
+   */
+  return_mode?: ReturnMode;
+}
+
+/**
  * All available domain names as a type
  */
 export type DomainName =

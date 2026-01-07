@@ -10,7 +10,8 @@
 
 import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { ToolRegistry } from '../registry/tool-registry.js';
-import { DOMAIN_NAMES } from '../registry/types.js';
+import { DOMAIN_NAMES, ExecuteOptions, ReturnMode } from '../registry/types.js';
+import { applyProjection, applyFilter, applyReturnMode } from '../execution/index.js';
 
 /**
  * Meta Tools class - exposes discovery and execution tools
@@ -66,7 +67,7 @@ export class MetaTools {
       },
       {
         name: 'execute_tool',
-        description: 'Execute a GoHighLevel tool by name. Arguments are validated against the tool schema. Use describe_tools first to see required parameters.',
+        description: 'Execute a GoHighLevel tool by name with optional result transformation. Use options to reduce context pollution by filtering, projecting, or summarizing results.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -78,6 +79,30 @@ export class MetaTools {
               type: 'object',
               description: 'Arguments to pass to the tool (must match tool schema)',
               additionalProperties: true
+            },
+            options: {
+              type: 'object',
+              description: 'Optional result transformation options to reduce context size',
+              properties: {
+                select_fields: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Select specific fields from results. Supports dot notation (e.g., "contact.email", "tags[0]")'
+                },
+                limit: {
+                  type: 'number',
+                  description: 'Limit array results to specified count (server-side)'
+                },
+                filter: {
+                  type: 'string',
+                  description: 'Filter expression: "field OPERATOR value". Operators: =, !=, >, <, CONTAINS, STARTS_WITH, IS_NULL, IS_NOT_NULL'
+                },
+                return_mode: {
+                  type: 'string',
+                  enum: ['inline', 'summary', 'file'],
+                  description: 'Return mode: inline (default, full data), summary (count + 3 samples), file (write to temp file)'
+                }
+              }
             }
           },
           required: ['tool_name', 'args']
@@ -210,11 +235,12 @@ export class MetaTools {
   }
 
   /**
-   * Execute a tool via the registry
+   * Execute a tool via the registry with optional result transformation
    */
   private async executeTool_(args: Record<string, unknown>): Promise<unknown> {
     const toolName = args.tool_name as string;
     const toolArgs = (args.args as Record<string, unknown>) || {};
+    const options = (args.options as ExecuteOptions) || {};
 
     if (!toolName) {
       return {
@@ -224,24 +250,73 @@ export class MetaTools {
       };
     }
 
-    const result = await this.registry.execute(toolName, toolArgs);
+    // Execute the underlying tool
+    const executeResult = await this.registry.execute(toolName, toolArgs);
 
-    if (!result.success) {
+    if (!executeResult.success) {
       return {
         success: false,
-        error: result.error,
-        validationErrors: result.validationErrors,
-        hint: result.validationErrors
+        error: executeResult.error,
+        validationErrors: executeResult.validationErrors,
+        hint: executeResult.validationErrors
           ? `Use describe_tools(['${toolName}']) to see required parameters`
           : 'Check the error message and try again'
       };
     }
 
-    return {
+    // Apply transformations in order: filter → limit → project → return_mode
+    let result = executeResult.result;
+    const transformations: string[] = [];
+
+    // 1. Apply filter
+    if (options.filter) {
+      const filterResult = applyFilter(result, options.filter);
+      if (filterResult.error) {
+        return {
+          success: false,
+          error: filterResult.error,
+          hint: 'Filter format: "field OPERATOR value". Operators: =, !=, >, <, CONTAINS, STARTS_WITH, IS_NULL, IS_NOT_NULL'
+        };
+      }
+      result = filterResult.result;
+      transformations.push(`filtered by "${options.filter}"`);
+    }
+
+    // 2. Apply limit (only for arrays)
+    if (options.limit !== undefined && Array.isArray(result)) {
+      const originalLength = result.length;
+      result = result.slice(0, options.limit);
+      if (originalLength > options.limit) {
+        transformations.push(`limited to ${options.limit} of ${originalLength}`);
+      }
+    }
+
+    // 3. Apply field projection
+    if (options.select_fields && options.select_fields.length > 0) {
+      result = applyProjection(result, options.select_fields);
+      transformations.push(`projected fields: ${options.select_fields.join(', ')}`);
+    }
+
+    // 4. Apply return mode
+    const returnMode = options.return_mode as ReturnMode | undefined;
+    if (returnMode && returnMode !== 'inline') {
+      result = applyReturnMode(result, returnMode, toolName);
+      transformations.push(`return_mode: ${returnMode}`);
+    }
+
+    // Build response
+    const response: Record<string, unknown> = {
       success: true,
       tool: toolName,
-      result: result.result
+      result
     };
+
+    // Add transformation info if any were applied
+    if (transformations.length > 0) {
+      response.transformations = transformations;
+    }
+
+    return response;
   }
 
   /**

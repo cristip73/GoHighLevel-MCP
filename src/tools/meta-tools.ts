@@ -12,6 +12,7 @@ import { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { ToolRegistry } from '../registry/tool-registry.js';
 import { DOMAIN_NAMES, ExecuteOptions, ReturnMode } from '../registry/types.js';
 import { applyProjection, applyFilter, applyReturnMode } from '../execution/index.js';
+import { executePipeline, PipelineRequest } from '../execution/pipeline-executor.js';
 
 /**
  * Meta Tools class - exposes discovery and execution tools
@@ -116,6 +117,54 @@ export class MetaTools {
           properties: {},
           required: []
         }
+      },
+      {
+        name: 'execute_pipeline',
+        description: 'Execute a multi-step workflow server-side, returning only the final result. Steps execute sequentially with variable passing between them. Use this to reduce context pollution by executing complex workflows in a single tool call.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            steps: {
+              type: 'array',
+              description: 'Array of steps to execute in order',
+              items: {
+                type: 'object',
+                properties: {
+                  id: {
+                    type: 'string',
+                    description: 'Unique identifier for this step (used in variable references like {{step_id.field}})'
+                  },
+                  tool_name: {
+                    type: 'string',
+                    description: 'Name of the tool to execute'
+                  },
+                  args: {
+                    type: 'object',
+                    description: 'Arguments for the tool. Use {{step_id.field}} syntax to reference results from previous steps',
+                    additionalProperties: true
+                  },
+                  delay_ms: {
+                    type: 'number',
+                    description: 'Optional delay in milliseconds before executing this step (max 30000)',
+                    minimum: 0,
+                    maximum: 30000
+                  }
+                },
+                required: ['id', 'tool_name', 'args']
+              },
+              minItems: 1
+            },
+            return: {
+              type: 'object',
+              description: 'Optional template specifying which fields to include in the final response. Keys are step IDs, values are arrays of field paths to extract. If not provided, returns the last step\'s full result.',
+              additionalProperties: {
+                type: 'array',
+                items: { type: 'string' }
+              }
+            }
+          },
+          required: ['steps']
+        }
       }
     ];
   }
@@ -136,6 +185,9 @@ export class MetaTools {
 
       case 'list_domains':
         return this.listDomains();
+
+      case 'execute_pipeline':
+        return this.executePipeline_(args);
 
       default:
         throw new Error(`Unknown meta-tool: ${name}`);
@@ -340,9 +392,47 @@ export class MetaTools {
   }
 
   /**
+   * Execute a multi-step pipeline server-side
+   */
+  private async executePipeline_(args: Record<string, unknown>): Promise<unknown> {
+    const request = args as unknown as PipelineRequest;
+
+    if (!request.steps || !Array.isArray(request.steps)) {
+      return {
+        success: false,
+        error: 'Pipeline must have a "steps" array',
+        hint: 'Each step needs: id, tool_name, and args'
+      };
+    }
+
+    // Create executor function that uses the registry
+    const executor = async (toolName: string, toolArgs: Record<string, unknown>) => {
+      return this.registry.execute(toolName, toolArgs);
+    };
+
+    // Execute the pipeline
+    const result = await executePipeline(request, executor);
+
+    // Add hints for common errors
+    if (!result.success && result.error) {
+      const response: Record<string, unknown> = { ...result };
+
+      if (result.error.step_id === '_validation') {
+        response.hint = 'Check step IDs and variable references. Variables can only reference previous steps.';
+      } else {
+        response.hint = `Use describe_tools(['${request.steps.find(s => s.id === result.error?.step_id)?.tool_name}']) to see required parameters`;
+      }
+
+      return response;
+    }
+
+    return result;
+  }
+
+  /**
    * Check if a tool name is a meta-tool
    */
   isMetaTool(name: string): boolean {
-    return ['search_tools', 'describe_tools', 'execute_tool', 'list_domains'].includes(name);
+    return ['search_tools', 'describe_tools', 'execute_tool', 'list_domains', 'execute_pipeline'].includes(name);
   }
 }

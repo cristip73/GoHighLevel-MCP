@@ -1,24 +1,30 @@
 # GoHighLevel Kilostop - Database Map
 > Raport comprehensiv generat pe 7 Ianuarie 2026
+> Ultima actualizare: 7 Ianuarie 2026 (investigație aprofundată)
 
 ---
 
 ## Executive Summary
 
-| Metric | Valoare |
-|--------|---------|
-| **Total Contacte** | 107,229 |
-| **Total Oportunități** | 57,167 |
-| **Total Conversații** | 68,249 |
-| **Email Campaigns** | 375 |
-| **Workflows** | 100+ |
-| **Calendare** | 46 |
-| **Custom Fields** | 118 |
-| **Tags** | 192 |
-| **Email Templates** | 370+ (în 16 foldere) |
-| **Produse** | 8 |
-| **Survey-uri** | 7 |
-| **Pipelines** | 5 |
+| Metric | Valoare | Notă |
+|--------|---------|------|
+| **Total Contacte** | 107,236 | +7 față de raportul inițial |
+| **Total Oportunități** | 57,171 | Distribuite în 5 pipelines |
+| **Total Conversații** | 68,256 | Predominant email automatizat |
+| **Email Campaigns** | 375 | Active |
+| **Workflows** | 100+ | Published |
+| **Calendare** | 46 | 20 medici + speciale |
+| **Custom Fields** | 118 | Pentru contacte |
+| **Tags** | 192 | Organizate pe categorii |
+| **Email Templates** | 370+ | În 16 foldere |
+| **Produse** | 8 | Doar 2 disponibile |
+| **Survey-uri** | 7 | NPS + feedback |
+| **Pipelines** | 5 | Vezi breakdown detaliat |
+| **Tasks** | 7 | Nefolosit sistematic |
+| **Orders** | 2 | Doar teste |
+| **Transactions** | 8 | Doar teste |
+| **Blog Sites** | 0 | Nefolosit |
+| **Custom Objects** | 0 | Doar cele sistem |
 
 ---
 
@@ -43,38 +49,48 @@ Timezone: Europe/Bucharest
 
 ## 2. Sales Pipelines
 
-### 2.1 Main Funnel (48,712 oportunități)
+### 2.1 Main Funnel (48,716 oportunități)
 Pipeline-ul principal de vânzări cu 8 stage-uri:
 
-| # | Stage | Descriere |
-|---|-------|-----------|
-| 1 | SM Contact Social Media | Contacte din social media |
-| 2 | P Prospect | Prospecți |
-| 3 | E Webinar | Participanți webinar |
-| 4 | Q Solicitare S0 | Cereri pentru consultație inițială |
-| 5 | CI Client S0 | Clienți care au făcut S0 |
-| 6 | CA Client Actual de Programe | Clienți actuali în programe |
-| 7 | CV Client Vechi Programe Old | Clienți vechi |
-| 8 | Client Vechi - Orice Program | Clienți vechi generali |
+| # | Stage | Count | % | Descriere |
+|---|-------|-------|---|-----------|
+| 1 | SM - Social Media | 4 | 0.01% | Contacte din social media |
+| 2 | **P - Prospect** | **38,442** | **78.9%** | Prospecți (majoritate) |
+| 3 | E - Engaged Prospect | 0 | 0% | Prospecți angajați (nefolosit) |
+| 4 | Q - Qualified Prospect | 5,313 | 10.9% | Prospecți calificați (solicitare S0) |
+| 5 | CI - Client Inițial | 848 | 1.7% | Clienți care au făcut prima consultație |
+| 6 | CA - Client Actual | 681 | 1.4% | Clienți actuali în programe |
+| 7 | CV - Client Vechi | 3,428 | 7.0% | Foști clienți |
+| 8 | Client Vechi - Orice Program | 0 | 0% | Clienți vechi generali (nefolosit) |
+
+**Legendă**: SM = Social Media, P = Prospect, E = Engaged, Q = Qualified, CI = Client Inițial, CA = Client Actual, CV = Client Vechi
+
+**Insight**: 78.9% din oportunități sunt în stadiul de Prospect. Conversion funnel: P→Q = 13.8%, Q→CI = 16.0%, CI→CA = 80.3%
 
 ### 2.2 Clienti Vechi Reactivare (7,778 oportunități)
 Pipeline pentru reactivarea clienților vechi prin WhatsApp:
 
-| # | Stage |
-|---|-------|
-| 1 | Trimis Mesaj |
-| 2 | A Răspuns |
-| 3 | Menținut |
-| 4 | Nemenținte - Followup IN CURS - nu a răspuns |
-| 5 | Nemenținte - Followup IN CURS - vrea programare |
-| 6 | Nemenținte - Followup FINALIZAT |
-| 7 | Nemenținte - Nu mai vrea |
-| 8 | Programat |
-| 9 | Nu mai vrea Kilostop |
-| 10 | Nu Răspuns după 3 |
-| 11 | Abandonat 30 zile |
-| 12 | Nemenținte - Followup |
-| 13 | Mesaj netrimis - Nu are WhatsApp |
+| # | Stage | Count | % | Status |
+|---|-------|-------|---|--------|
+| 1 | Trimis Mesaj | 352 | 4.5% | În curs |
+| 2 | A Răspuns | 17 | 0.2% | În curs |
+| 3 | **Menținut** ✅ | **2,531** | **32.5%** | Succes |
+| 4 | Nemenținte - Followup IN CURS - nu a răspuns | 1 | 0.01% | În curs |
+| 5 | Nemenținte - Followup IN CURS - vrea programare | 8 | 0.1% | În curs |
+| 6 | Nemenținte - Followup FINALIZAT | 1,231 | 15.8% | Finalizat |
+| 7 | Nemenținte - Nu mai vrea | 211 | 2.7% | Pierdut |
+| 8 | **Programat** 👍 | **226** | **2.9%** | Succes |
+| 9 | Nu mai vrea Kilostop 🛑 | 229 | 2.9% | Pierdut |
+| 10 | **Nu Răspuns după 3** | **2,526** | **32.5%** | Blocat |
+| 11 | Abandonat 30 zile | 0 | 0% | - |
+| 12 | Nemenținte - Followup | 0 | 0% | - |
+| 13 | Mesaj netrimis - Nu are WhatsApp | 446 | 5.7% | Blocat |
+
+**Insight Reactivare**:
+- **Succes total**: 2,757 (35.4%) - Menținut + Programat
+- **Blocați**: 2,972 (38.2%) - Nu răspuns + Fără WhatsApp
+- **Pierduți**: 440 (5.7%) - Nu mai vor
+- **În curs/Finalizat**: 1,609 (20.7%)
 
 ### 2.3 Webinars (543 oportunități)
 Tracking pentru webinar funnel:
@@ -113,19 +129,24 @@ Pipeline temporar pentru sortare:
 
 ---
 
-## 3. Custom Objects
+## 3. Custom Objects & Associations
 
-### 3.1 Contact Object
-- **Required Properties**: `contact.email`
-- **Searchable Properties**: name, email, businessName, tags, phone
+### 3.1 Obiecte Disponibile (doar sistem-defined)
+Nu există custom objects create. Doar cele 3 obiecte sistem:
 
-### 3.2 Opportunity Object
-- **Required Properties**: `opportunity.name`
-- **Searchable Properties**: name, contactPhone, contactEmail, businessName, tags, contactName
+| Object | Required | Searchable | Type |
+|--------|----------|------------|------|
+| **Contact** | `contact.email` | name, email, businessName, tags, phone | SYSTEM_DEFINED |
+| **Opportunity** | `opportunity.name` | name, contactPhone, contactEmail, businessName, tags, contactName | SYSTEM_DEFINED |
+| **Company (Business)** | `business.name` | business.name | SYSTEM_DEFINED |
 
-### 3.3 Company (Business) Object
-- **Required Properties**: `business.name`
-- **Searchable Properties**: business.name
+### 3.2 Asocieri (2 total)
+| Asociere | Tip | Prima Entitate | A Doua Entitate |
+|----------|-----|----------------|-----------------|
+| OPPORTUNITIES_CONTACTS | SYSTEM_DEFINED | Opportunity → Contact | Contact → Opportunity |
+| BUSINESSES_CONTACTS | SYSTEM_DEFINED | Primary Company → Business | Contact → Contact |
+
+**Notă**: Nu există asocieri custom definite.
 
 ---
 
@@ -543,8 +564,15 @@ Contactele au tracking complet pentru:
 
 ### 14.2 Lifecycle Stages
 ```
-Social Media Contact → Prospect → Webinar → Solicitare S0 → Client S0 → Client Actual → Client Vechi
+SM (Social Media) → P (Prospect) → E (Engaged) → Q (Qualified) → CI (Client Inițial) → CA (Client Actual) → CV (Client Vechi)
 ```
+
+**Fluxul tipic**:
+- Lead nou din ads → **P** (Prospect)
+- Completează quiz/formular → **Q** (Qualified - solicitare S0)
+- Face prima consultație → **CI** (Client Inițial)
+- Începe program → **CA** (Client Actual)
+- Finalizează/abandonează → **CV** (Client Vechi)
 
 ### 14.3 DND Settings
 Fiecare contact poate avea DND pe:
@@ -590,18 +618,146 @@ Fiecare contact poate avea DND pe:
 
 ---
 
-## 16. Recomandări
+## 16. Conversații (68,256 total)
 
-### 16.1 Oportunități de Îmbunătățire
-1. **Pipeline Sales S0 gol** - De verificat dacă e intenționat sau eroare de configurare
-2. **Social Media neconectat** - Oportunitate de integrare FB/IG
-3. **Produse inactive** - Majoritatea produselor sunt "Not Available"
+### 16.1 Tipuri de Mesaje
+| Tip | Descriere | Utilizare |
+|-----|-----------|-----------|
+| `TYPE_EMAIL` | Emails | Majoritate - automatizări |
+| `TYPE_FACEBOOK` | Mesaje Facebook Messenger | Ocazional |
+| `TYPE_CUSTOM_SMS` | SMS via WhatsApp/Custom provider | Reactivare clienți |
 
-### 16.2 Date de Monitorizat
-- **Rata de conversie Main Funnel**: Q→CI→CA
-- **Succes reactivare**: 7,778 oportunități în pipeline
-- **Eficiență email**: ~95% delivery rate
+### 16.2 Caracteristici
+- **Ultima direcție**: Majoritar `outbound` (automatizări)
+- **Ultima acțiune**: `automated` (din workflows)
+- **Scoring**: Lead scoring activ cu ID `6594647f1ede82b2e654a1e6`
+- **Followers**: Unele conversații au followeri asignați
 
 ---
 
-*Raport generat automat prin GHL MCP Server*
+## 17. Payments & Invoices
+
+### 17.1 Status: Nefolosit în Producție
+Sistemul de plăți GHL **nu este folosit** pentru operațiunile reale. Toate datele sunt teste.
+
+### 17.2 Facturi (7 total)
+| # | Nume | Status | Sumă | Data |
+|---|------|--------|------|------|
+| 000008 | Factura noua | sent | 50 RON | Aug 2024 |
+| 000006 | Text2Pay - Adrian | sent | 495 RON | Feb 2024 |
+| 000005 | Text2Pay - Ana Sipciu | sent | 495 RON | Feb 2024 |
+| 000004 | Text2Pay - Ancuta | sent | 495 RON | Feb 2024 |
+| 000003 | Text2Pay - Andrei Calagiu | **paid** | 10 RON | Feb 2024 |
+| 000002 | New Invoice | sent | 5 RON | Feb 2023 |
+| 000001 | Cristian Panaite | **paid** | 4.5 RON | Feb 2023 |
+
+### 17.3 Orders (2 total)
+| Order | Contact | Sumă | Status | Sursă |
+|-------|---------|------|--------|-------|
+| Ozempic Gratis Test | Cristian Panaite | 21 RON | completed | membership |
+| Programul Ozempic 3 luni | Cristian Panaite | 0 RON | pending | communities |
+
+### 17.4 Transactions (8 total)
+- **Succeeded**: 3 (25.5 RON total)
+- **Refunded**: 2 (112 RON)
+- **Failed**: 2
+- **Partially Refunded**: 1
+- **Provider**: Stripe (`acct_1MHqYMLx4wprPFJV`)
+
+**Concluzie**: Plățile se procesează în afara GHL (probabil prin Kilosoft sau alt sistem).
+
+---
+
+## 18. Blog
+
+**Status**: Nefolosit
+- 0 site-uri blog configurate
+- 0 articole publicate
+
+---
+
+## 19. Tasks (7 total)
+
+### 19.1 Status
+| Task | Contact | Assigned To | Due Date | Status |
+|------|---------|-------------|----------|--------|
+| revenire | Horea Sibisteanu | Alexandra Andreescu | 06.01.2026 | Open |
+| test | Andreea Nechifor | - | 26.01.2025 | Open |
+| Sun Maine | Cristian Panaite | Cristian Panaite | 23.01.2025 | Open |
+| Suna maine | Alexandra Andreescu | Programări Kilostop | 23.01.2025 | **Completed** |
+| revino marti | Constantin Anca | Andreea Nechifor | 24.12.2024 | Open |
+| Suna si vezi reintoarcere | Constantin Anca | - | 29.01.2024 | **Completed** |
+| Suna vezi ce mai face | Grosu Toma | - | 28.01.2024 | **Completed** |
+
+### 19.2 Observații
+- Tasks sunt folosite **minimal** (doar 7 în total)
+- Utilizare principală: "de revenit" / "sună mâine"
+- Nu e un sistem sistematic de task management
+
+---
+
+## 20. Zone Neexplorate / De Investigat
+
+### 20.1 Parțial Explorate
+| Zonă | Status | Ce știm | Ce lipsește |
+|------|--------|---------|-------------|
+| **Appointments** | ⚠️ | 46 calendare configurate | Număr total programări, statistici per calendar |
+| **Email Templates Content** | ⚠️ | 370+ templates în 16 foldere | Conținutul efectiv al template-urilor |
+| **Workflow Configuration** | ⚠️ | 100+ workflows, categorii | Configurația detaliată, triggere, acțiuni |
+| **Custom Field Values** | ⚠️ | 118 câmpuri definite | Distribuția valorilor per câmp |
+| **Attribution Analysis** | ⚠️ | UTM params, gclid, fbclid tracking | Analiza surselor de conversie |
+
+### 20.2 Neexplorate
+| Zonă | Motiv | Recomandare |
+|------|-------|-------------|
+| **Notes pe contacte** | Contactele noi nu au notes | Verifică contacte vechi cu activitate |
+| **Recordings** | Nu am căutat | Ar putea exista înregistrări apeluri |
+| **Forms** | Nu am explorat | Formulare de pe site/landing pages |
+| **Funnels** | Nu am explorat | Structura funnels GHL |
+
+### 20.3 Query-uri Recomandate pentru Investigații Viitoare
+```
+# Appointments per calendar (necesită calendarId)
+get_calendar_events(calendarId, startTime, endTime)
+
+# Custom field value distribution
+search_contacts cu filtre pe custom fields
+
+# Attribution analysis
+search_contacts + group by attributionSource.sessionSource
+
+# Contacte cu note
+execute_pipeline cu get_contact_notes în loop
+```
+
+---
+
+## 21. Recomandări
+
+### 21.1 Oportunități de Îmbunătățire
+1. **Pipeline Sales S0 gol** - De verificat dacă e intenționat sau eroare de configurare
+2. **Social Media neconectat** - Oportunitate de integrare FB/IG
+3. **Produse inactive** - Majoritatea produselor sunt "Not Available"
+4. **Blog nefolosit** - Oportunitate pentru content marketing
+5. **Tasks nefolosite** - De evaluat dacă ar ajuta echipa
+6. **Payments în GHL** - Nu e folosit, totul merge prin alte sisteme
+
+### 21.2 Date de Monitorizat
+- **Rata de conversie Main Funnel**: P→Q = 13.8%, Q→CI = 16.0%, CI→CA = 80.3%
+- **Succes reactivare**: 35.4% succes (2,757 din 7,778)
+- **Blocați reactivare**: 38.2% (2,972) - potențial de deblocare
+- **Eficiență email**: ~95% delivery rate
+
+### 21.3 Pipeline IDs (pentru referință API)
+| Pipeline | ID |
+|----------|-----|
+| Main Funnel | `XCcnOPUWUSE5XxXLfXBB` |
+| Clienti Vechi Reactivare | `6s1kBPXVHaVwZ0wVLtuz` |
+| Webinars | `oewV8e2iZwNFS8SCzqbK` |
+| Sales S0 | `LoizBtLY8c3rEVYdXkW2` |
+| Tmp - Sortare | `UOQpYDgejDutIoXLlcOQ` |
+
+---
+
+*Raport generat și actualizat automat prin GHL MCP Server*
+*Ultima actualizare: 7 Ianuarie 2026*

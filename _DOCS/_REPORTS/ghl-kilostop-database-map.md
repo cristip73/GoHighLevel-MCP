@@ -31,11 +31,11 @@
 ## 1. Location Details
 
 ```
-Nume:     Clinica Kilostop
-Email:    cristian.panaite@kilostop.ro
-Telefon:  +40720900690
-Website:  https://www.kilostop.ro
-Adresă:   Soseaua Nicolae Titulescu 88B, București, România
+Nume:     [REDACTED]
+Email:    [REDACTED]@example.com
+Telefon:  +40XXX XXX XXX
+Website:  https://www.example.ro
+Adresă:   [REDACTED], București, România
 Timezone: Europe/Bucharest
 ```
 

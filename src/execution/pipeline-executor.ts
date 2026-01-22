@@ -1,0 +1,665 @@
+/**
+ * Pipeline Executor - Multi-step workflow execution
+ *
+ * Executes a series of tool calls server-side, passing results between steps
+ * via variable references. Only the final result is returned to the LLM.
+ *
+ * Features:
+ * - Sequential step execution
+ * - Variable interpolation between steps ({{step_id.field}})
+ * - Loop support for iterating over arrays ({{item}} syntax)
+ * - Filter support for conditional execution
+ * - Parallel loop execution with configurable concurrency
+ * - Optional delays between steps
+ * - Error handling with partial results
+ * - Return template for selecting final output
+ */
+
+import { resolveVariables, resolveString, PipelineContext, getReferencedSteps } from './variable-resolver.js';
+import { applyProjection, applyProjectionWithWarnings, getValueByPath } from './field-projector.js';
+import { RateLimiter, getSharedRateLimiter } from './rate-limiter.js';
+
+/**
+ * Single pipeline step definition
+ */
+export interface PipelineStep {
+  /** Unique identifier for this step (used in variable references) */
+  id: string;
+  /** Name of the tool to execute */
+  tool_name: string;
+  /** Arguments to pass to the tool (may contain {{var}} references) */
+  args: Record<string, unknown>;
+  /** Optional delay in milliseconds before executing this step */
+  delay_ms?: number;
+  /**
+   * Loop over an array. Use {{item}} to reference current item, {{index}} for position.
+   * Example: "{{search.contacts}}" - iterates over contacts array from search step
+   */
+  loop?: string;
+  /**
+   * Filter condition for loop execution. Step is skipped for items where condition is falsy.
+   * Can be a path that must exist and be truthy, or a simple expression.
+   * Examples:
+   * - "{{item.conversations.length}}" - skip if no conversations
+   * - "{{item.email}}" - skip if no email
+   */
+  filter?: string;
+  /**
+   * Concurrency for loop execution (default: 5, max: 10).
+   * Only applies when loop is specified.
+   */
+  concurrency?: number;
+}
+
+/**
+ * Return template specifying which fields to include in final response
+ */
+export interface ReturnTemplate {
+  /** Step ID to field paths mapping */
+  [stepId: string]: string[];
+}
+
+/**
+ * Pipeline execution request
+ */
+export interface PipelineRequest {
+  /** Array of steps to execute in order */
+  steps: PipelineStep[];
+  /** Optional template specifying which fields to return */
+  return?: ReturnTemplate;
+  /** Optional timeout in milliseconds for the entire pipeline (default: 120000ms = 2 min) */
+  timeout_ms?: number;
+  /** Custom rate limiter for testing (uses shared limiter by default) */
+  _rateLimiter?: RateLimiter;
+}
+
+/**
+ * Result of a single loop iteration
+ */
+export interface LoopIterationResult {
+  index: number;
+  success: boolean;
+  result?: unknown;
+  error?: string;
+  skipped?: boolean;
+}
+
+/**
+ * Result of a successful step execution
+ */
+export interface StepResult {
+  step_id: string;
+  tool_name: string;
+  success: true;
+  result: unknown;
+  duration_ms: number;
+}
+
+/**
+ * Result of a failed step execution
+ */
+export interface StepError {
+  step_id: string;
+  tool_name: string;
+  success: false;
+  error: string;
+  validation_errors?: string[];
+}
+
+/**
+ * Detailed step execution result (for partial results)
+ */
+export interface StepExecutionResult {
+  success: boolean;
+  duration_ms: number;
+  /** The actual result data from this step (for partial recovery) */
+  result?: unknown;
+}
+
+/**
+ * Full pipeline execution result
+ */
+export interface PipelineResult {
+  success: boolean;
+  /** Number of steps completed successfully */
+  steps_completed: number;
+  /** Total number of steps in pipeline */
+  total_steps: number;
+  /** Total execution time in milliseconds */
+  duration_ms: number;
+  /** Final result (projected if return template provided) */
+  result?: unknown;
+  /** Error information if pipeline failed */
+  error?: {
+    step_id: string;
+    message: string;
+    validation_errors?: string[];
+  };
+  /** Results from completed steps with full data (for debugging/partial recovery) */
+  step_results?: Record<string, StepExecutionResult>;
+  /** Set to true if pipeline was stopped due to timeout */
+  timed_out?: boolean;
+  /** Warnings about projection issues or other non-fatal problems */
+  warnings?: string[];
+}
+
+/**
+ * Tool executor function type (provided by registry)
+ */
+export type ToolExecutor = (
+  toolName: string,
+  args: Record<string, unknown>
+) => Promise<{ success: boolean; result?: unknown; error?: string; validationErrors?: string[] }>;
+
+/**
+ * Delay execution for specified milliseconds
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/** Default loop concurrency */
+const DEFAULT_LOOP_CONCURRENCY = 5;
+/** Maximum loop concurrency */
+const MAX_LOOP_CONCURRENCY = 10;
+/** Maximum loop iterations (prevent abuse) */
+const MAX_LOOP_ITERATIONS = 100;
+
+/**
+ * Evaluate a filter condition against the current context
+ * Returns true if the item passes the filter (should be processed)
+ */
+function evaluateFilter(filter: string, context: PipelineContext): boolean {
+  // Resolve the filter expression
+  const resolved = resolveString(filter, context);
+
+  // Check if resolved value is truthy
+  if (resolved === undefined || resolved === null || resolved === '' || resolved === false || resolved === 0) {
+    return false;
+  }
+
+  // Arrays pass if they have length > 0
+  if (Array.isArray(resolved)) {
+    return resolved.length > 0;
+  }
+
+  return true;
+}
+
+/**
+ * Execute a loop step with parallel processing
+ */
+async function executeLoopStep(
+  step: PipelineStep,
+  context: PipelineContext,
+  executor: ToolExecutor,
+  rateLimiter: RateLimiter,
+  isTimedOut: () => boolean
+): Promise<{
+  success: boolean;
+  results: unknown[];
+  errors: Array<{ index: number; error: string }>;
+  skipped: number;
+}> {
+  // Resolve the loop array reference
+  const loopArray = resolveString(step.loop!, context);
+
+  if (!Array.isArray(loopArray)) {
+    return {
+      success: false,
+      results: [],
+      errors: [{ index: -1, error: `Loop reference "${step.loop}" did not resolve to an array` }],
+      skipped: 0
+    };
+  }
+
+  if (loopArray.length === 0) {
+    return { success: true, results: [], errors: [], skipped: 0 };
+  }
+
+  if (loopArray.length > MAX_LOOP_ITERATIONS) {
+    return {
+      success: false,
+      results: [],
+      errors: [{ index: -1, error: `Loop array exceeds maximum of ${MAX_LOOP_ITERATIONS} items` }],
+      skipped: 0
+    };
+  }
+
+  const concurrency = Math.min(
+    Math.max(1, step.concurrency || DEFAULT_LOOP_CONCURRENCY),
+    MAX_LOOP_CONCURRENCY
+  );
+
+  const results: unknown[] = new Array(loopArray.length);
+  const errors: Array<{ index: number; error: string }> = [];
+  let skippedCount = 0;
+
+  // Process in batches of `concurrency` size
+  for (let batchStart = 0; batchStart < loopArray.length; batchStart += concurrency) {
+    if (isTimedOut()) {
+      errors.push({ index: batchStart, error: 'Pipeline timeout during loop execution' });
+      break;
+    }
+
+    const batchEnd = Math.min(batchStart + concurrency, loopArray.length);
+    const batchPromises: Promise<LoopIterationResult>[] = [];
+
+    for (let i = batchStart; i < batchEnd; i++) {
+      const item = loopArray[i];
+
+      // Create iteration context with item and index
+      const iterationContext: PipelineContext = {
+        ...context,
+        item,
+        index: i
+      };
+
+      // Check filter condition
+      if (step.filter) {
+        const passesFilter = evaluateFilter(step.filter, iterationContext);
+        if (!passesFilter) {
+          batchPromises.push(Promise.resolve({
+            index: i,
+            success: true,
+            result: null,
+            skipped: true
+          }));
+          continue;
+        }
+      }
+
+      // Acquire rate limit token and execute
+      batchPromises.push(
+        (async (): Promise<LoopIterationResult> => {
+          const acquired = await rateLimiter.acquire(30000);
+          if (!acquired) {
+            return {
+              index: i,
+              success: false,
+              error: 'Rate limit timeout'
+            };
+          }
+
+          // Resolve args with iteration context
+          const resolvedArgs = resolveVariables(step.args, iterationContext) as Record<string, unknown>;
+
+          try {
+            const execResult = await executor(step.tool_name, resolvedArgs);
+            return {
+              index: i,
+              success: execResult.success,
+              result: execResult.success ? execResult.result : undefined,
+              error: execResult.success ? undefined : execResult.error
+            };
+          } catch (err) {
+            return {
+              index: i,
+              success: false,
+              error: err instanceof Error ? err.message : String(err)
+            };
+          }
+        })()
+      );
+    }
+
+    // Wait for batch to complete
+    const batchResults = await Promise.all(batchPromises);
+
+    // Process batch results
+    for (const result of batchResults) {
+      if (result.skipped) {
+        skippedCount++;
+        results[result.index] = null;
+      } else if (result.success) {
+        results[result.index] = result.result;
+      } else {
+        errors.push({ index: result.index, error: result.error || 'Unknown error' });
+        results[result.index] = null;
+      }
+    }
+  }
+
+  // Filter out null results (skipped or failed items) for final output
+  const successfulResults = results.filter(r => r !== null);
+
+  return {
+    success: errors.length === 0,
+    results: successfulResults,
+    errors,
+    skipped: skippedCount
+  };
+}
+
+/**
+ * Validate pipeline steps before execution
+ */
+export function validatePipeline(request: PipelineRequest): string[] {
+  const errors: string[] = [];
+
+  if (!request.steps || !Array.isArray(request.steps)) {
+    errors.push('Pipeline must have a "steps" array');
+    return errors;
+  }
+
+  if (request.steps.length === 0) {
+    errors.push('Pipeline must have at least one step');
+    return errors;
+  }
+
+  const stepIds = new Set<string>();
+
+  for (let i = 0; i < request.steps.length; i++) {
+    const step = request.steps[i];
+    const stepNum = i + 1;
+
+    // Check required fields
+    if (!step.id) {
+      errors.push(`Step ${stepNum}: missing "id" field`);
+    } else if (stepIds.has(step.id)) {
+      errors.push(`Step ${stepNum}: duplicate step id "${step.id}"`);
+    } else {
+      stepIds.add(step.id);
+    }
+
+    if (!step.tool_name) {
+      errors.push(`Step ${stepNum}: missing "tool_name" field`);
+    }
+
+    if (!step.args || typeof step.args !== 'object') {
+      errors.push(`Step ${stepNum}: "args" must be an object`);
+    }
+
+    // Check that variable references only refer to previous steps
+    // Special loop variables 'item' and 'index' are allowed in loop steps
+    if (step.args && step.id) {
+      const referencedSteps = getReferencedSteps(step.args);
+      for (const refStep of referencedSteps) {
+        // Skip loop-specific variables (item and index)
+        if (step.loop && (refStep === 'item' || refStep === 'index')) {
+          continue;
+        }
+        // Check if referenced step exists and comes before this step
+        const refIndex = request.steps.findIndex(s => s.id === refStep);
+        if (refIndex === -1) {
+          errors.push(`Step ${stepNum} (${step.id}): references unknown step "${refStep}"`);
+        } else if (refIndex >= i) {
+          errors.push(`Step ${stepNum} (${step.id}): references step "${refStep}" which hasn't executed yet`);
+        }
+      }
+    }
+
+    // Validate delay_ms if provided
+    if (step.delay_ms !== undefined) {
+      if (typeof step.delay_ms !== 'number' || step.delay_ms < 0) {
+        errors.push(`Step ${stepNum}: "delay_ms" must be a non-negative number`);
+      } else if (step.delay_ms > 30000) {
+        errors.push(`Step ${stepNum}: "delay_ms" cannot exceed 30000 (30 seconds)`);
+      }
+    }
+
+    // Validate loop if provided
+    if (step.loop !== undefined) {
+      if (typeof step.loop !== 'string' || !step.loop.trim()) {
+        errors.push(`Step ${stepNum}: "loop" must be a non-empty string (e.g., "{{step_id.array}}")`);
+      } else if (!step.loop.includes('{{')) {
+        errors.push(`Step ${stepNum}: "loop" must be a variable reference (e.g., "{{step_id.array}}")`);
+      }
+    }
+
+    // Validate filter if provided
+    if (step.filter !== undefined) {
+      if (typeof step.filter !== 'string') {
+        errors.push(`Step ${stepNum}: "filter" must be a string expression`);
+      }
+      if (!step.loop) {
+        errors.push(`Step ${stepNum}: "filter" can only be used with "loop"`);
+      }
+    }
+
+    // Validate concurrency if provided
+    if (step.concurrency !== undefined) {
+      if (typeof step.concurrency !== 'number' || step.concurrency < 1) {
+        errors.push(`Step ${stepNum}: "concurrency" must be a positive number`);
+      } else if (step.concurrency > MAX_LOOP_CONCURRENCY) {
+        errors.push(`Step ${stepNum}: "concurrency" cannot exceed ${MAX_LOOP_CONCURRENCY}`);
+      }
+      if (!step.loop) {
+        errors.push(`Step ${stepNum}: "concurrency" can only be used with "loop"`);
+      }
+    }
+  }
+
+  // Validate timeout_ms if provided
+  if (request.timeout_ms !== undefined) {
+    if (typeof request.timeout_ms !== 'number' || request.timeout_ms < 0) {
+      errors.push('"timeout_ms" must be a non-negative number');
+    } else if (request.timeout_ms > 300000) {
+      errors.push('"timeout_ms" cannot exceed 300000 (5 minutes)');
+    }
+  }
+
+  // Validate max steps (prevent abuse)
+  if (request.steps.length > 20) {
+    errors.push('Pipeline cannot have more than 20 steps');
+  }
+
+  // Validate return template if provided
+  if (request.return) {
+    for (const stepId of Object.keys(request.return)) {
+      if (!stepIds.has(stepId)) {
+        errors.push(`Return template references unknown step "${stepId}"`);
+      }
+      const fields = request.return[stepId];
+      if (!Array.isArray(fields)) {
+        errors.push(`Return template for step "${stepId}" must be an array of field paths`);
+      }
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Result of applying return template with optional warnings
+ */
+export interface ApplyReturnTemplateResult {
+  result: Record<string, unknown>;
+  warnings?: string[];
+}
+
+/**
+ * Apply return template to extract selected fields from step results
+ */
+export function applyReturnTemplate(
+  context: PipelineContext,
+  template: ReturnTemplate
+): ApplyReturnTemplateResult {
+  const result: Record<string, unknown> = {};
+  const allWarnings: string[] = [];
+
+  for (const [stepId, fields] of Object.entries(template)) {
+    const stepResult = context[stepId];
+    if (stepResult === undefined) {
+      allWarnings.push(`Step "${stepId}" not found in context`);
+      continue;
+    }
+
+    const projection = applyProjectionWithWarnings(stepResult, fields);
+    result[stepId] = projection.value;
+    if (projection.warnings) {
+      allWarnings.push(...projection.warnings.map(w => `[${stepId}] ${w}`));
+    }
+  }
+
+  return {
+    result,
+    warnings: allWarnings.length > 0 ? allWarnings : undefined
+  };
+}
+
+/** Default pipeline timeout: 2 minutes */
+const DEFAULT_TIMEOUT_MS = 120000;
+
+/**
+ * Execute a pipeline of tool calls
+ *
+ * @param request - Pipeline request with steps and optional return template
+ * @param executor - Function to execute individual tools
+ * @returns Pipeline result with success status and results
+ */
+export async function executePipeline(
+  request: PipelineRequest,
+  executor: ToolExecutor
+): Promise<PipelineResult> {
+  const startTime = Date.now();
+  const timeoutMs = request.timeout_ms ?? DEFAULT_TIMEOUT_MS;
+
+  // Validate pipeline structure
+  const validationErrors = validatePipeline(request);
+  if (validationErrors.length > 0) {
+    return {
+      success: false,
+      steps_completed: 0,
+      total_steps: request.steps?.length || 0,
+      duration_ms: Date.now() - startTime,
+      error: {
+        step_id: '_validation',
+        message: 'Pipeline validation failed',
+        validation_errors: validationErrors
+      }
+    };
+  }
+
+  const context: PipelineContext = {};
+  const stepResults: Record<string, StepExecutionResult> = {};
+
+  // Get rate limiter (shared or provided for testing)
+  const rateLimiter = request._rateLimiter || getSharedRateLimiter();
+
+  // Helper to check if we've exceeded timeout
+  const isTimedOut = () => (Date.now() - startTime) > timeoutMs;
+
+  // Execute steps sequentially
+  for (let i = 0; i < request.steps.length; i++) {
+    const step = request.steps[i];
+
+    // Check timeout before starting step
+    if (isTimedOut()) {
+      return {
+        success: false,
+        steps_completed: i,
+        total_steps: request.steps.length,
+        duration_ms: Date.now() - startTime,
+        error: {
+          step_id: step.id,
+          message: `Pipeline timeout exceeded (${timeoutMs}ms)`
+        },
+        step_results: Object.keys(stepResults).length > 0 ? stepResults : undefined,
+        timed_out: true
+      };
+    }
+
+    // Apply delay if specified
+    if (step.delay_ms && step.delay_ms > 0) {
+      await delay(step.delay_ms);
+    }
+
+    const stepStartTime = Date.now();
+
+    // Check if this is a loop step
+    if (step.loop) {
+      // Execute loop step with parallelism
+      const loopResult = await executeLoopStep(step, context, executor, rateLimiter, isTimedOut);
+      const stepDuration = Date.now() - stepStartTime;
+
+      if (!loopResult.success) {
+        return {
+          success: false,
+          steps_completed: i,
+          total_steps: request.steps.length,
+          duration_ms: Date.now() - startTime,
+          error: {
+            step_id: step.id,
+            message: loopResult.errors[0]?.error || 'Loop execution failed',
+            validation_errors: loopResult.errors.map(e => `[${e.index}] ${e.error}`)
+          },
+          step_results: Object.keys(stepResults).length > 0 ? stepResults : undefined
+        };
+      }
+
+      // Store loop results as an array in context
+      context[step.id] = loopResult.results;
+
+      stepResults[step.id] = {
+        success: true,
+        duration_ms: stepDuration,
+        result: {
+          items: loopResult.results,
+          total: loopResult.results.length,
+          skipped: loopResult.skipped
+        }
+      };
+    } else {
+      // Regular step execution (no loop)
+      // Resolve variable references in args
+      const resolvedArgs = resolveVariables(step.args, context) as Record<string, unknown>;
+
+      // Execute the tool
+      const execResult = await executor(step.tool_name, resolvedArgs);
+      const stepDuration = Date.now() - stepStartTime;
+
+      if (!execResult.success) {
+        // Step failed - stop pipeline and return error with partial results
+        return {
+          success: false,
+          steps_completed: i,
+          total_steps: request.steps.length,
+          duration_ms: Date.now() - startTime,
+          error: {
+            step_id: step.id,
+            message: execResult.error || 'Unknown error',
+            validation_errors: execResult.validationErrors
+          },
+          step_results: Object.keys(stepResults).length > 0 ? stepResults : undefined
+        };
+      }
+
+      // Store result in context for subsequent steps
+      context[step.id] = execResult.result;
+
+      // Store complete step result including data for partial recovery
+      stepResults[step.id] = {
+        success: true,
+        duration_ms: stepDuration,
+        result: execResult.result
+      };
+    }
+  }
+
+  // All steps completed successfully
+  const totalDuration = Date.now() - startTime;
+
+  // Apply return template if provided
+  let finalResult: unknown;
+  let warnings: string[] | undefined;
+
+  if (request.return) {
+    const templateResult = applyReturnTemplate(context, request.return);
+    finalResult = templateResult.result;
+    warnings = templateResult.warnings;
+  } else {
+    // Return the last step's result by default
+    const lastStep = request.steps[request.steps.length - 1];
+    finalResult = context[lastStep.id];
+  }
+
+  return {
+    success: true,
+    steps_completed: request.steps.length,
+    total_steps: request.steps.length,
+    duration_ms: totalDuration,
+    result: finalResult,
+    warnings
+  };
+}

@@ -96,6 +96,7 @@ export interface GHLSearchContactsRequest {
       gte?: string;
       lte?: string;
     };
+    validEmail?: boolean;
   };
 }
 
@@ -431,6 +432,12 @@ export interface MCPSearchContactsParams {
   email?: string;
   phone?: string;
   limit?: number;
+  startAfterId?: string;
+  startAfter?: number;
+  dateAddedGte?: string;
+  dateAddedLte?: string;
+  validEmail?: boolean;
+  tags?: string[];
 }
 
 export interface MCPUpdateContactParams {

@@ -92,7 +92,13 @@ export class ContactTools {
             query: { type: 'string', description: 'Search query string' },
             email: { type: 'string', description: 'Filter by email address' },
             phone: { type: 'string', description: 'Filter by phone number' },
-            limit: { type: 'number', description: 'Maximum number of results (default: 25)' }
+            limit: { type: 'number', description: 'Maximum number of results (default: 25)' },
+            startAfterId: { type: 'string', description: 'Cursor ID for pagination (from previous response)' },
+            startAfter: { type: 'number', description: 'Timestamp cursor for pagination' },
+            dateAddedGte: { type: 'string', description: 'Filter contacts added after date (ISO format, e.g. 2026-01-01)' },
+            dateAddedLte: { type: 'string', description: 'Filter contacts added before date (ISO format)' },
+            validEmail: { type: 'boolean', description: 'Filter by email validity (true=valid, false=invalid)' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Filter by contact tags' }
           }
         }
       },
@@ -596,13 +602,24 @@ export class ContactTools {
   }
 
   private async searchContacts(params: MCPSearchContactsParams): Promise<GHLSearchContactsResponse> {
+    // Build dateAdded filter if date params provided
+    const dateAddedFilter = (params.dateAddedGte || params.dateAddedLte) ? {
+      ...(params.dateAddedGte && { gte: params.dateAddedGte }),
+      ...(params.dateAddedLte && { lte: params.dateAddedLte })
+    } : undefined;
+
     const response = await this.ghlClient.searchContacts({
-        locationId: this.ghlClient.getConfig().locationId,
+      locationId: this.ghlClient.getConfig().locationId,
       query: params.query,
       limit: params.limit,
+      startAfterId: params.startAfterId,
+      startAfter: params.startAfter,
       filters: {
         ...(params.email && { email: params.email }),
-        ...(params.phone && { phone: params.phone })
+        ...(params.phone && { phone: params.phone }),
+        ...(params.tags && params.tags.length > 0 && { tags: params.tags }),
+        ...(dateAddedFilter && { dateAdded: dateAddedFilter }),
+        ...(typeof params.validEmail === 'boolean' && { validEmail: params.validEmail })
       }
     });
 

@@ -595,6 +595,11 @@ export class GHLApiClient {
           hasFilters = true;
         }
 
+        if (typeof searchParams.filters.validEmail === 'boolean') {
+          filters.validEmail = searchParams.filters.validEmail;
+          hasFilters = true;
+        }
+
         // Only add filters object if we have actual filters
         if (hasFilters) {
           payload.filters = filters;
